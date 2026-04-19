@@ -1,0 +1,70 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Secrets / credentials ──────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+secrets.json
+credentials.json
+*_credentials.py
+
+# ── Data files (rebuilt by collectors / generators — do not publish) ──────────
+data/bioventure.db
+data/bioventure.json
+data/bioventure_test.json
+data/synthetic_poc.json
+data/10year_analysis.txt
+data/30year_analysis.txt
+data/slides/
+
+# ── Trained model artefacts ───────────────────────────────────────────────────
+models/
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.onnx
+
+# ── Decision / audit logs (may contain project metadata) ──────────────────────
+decision_log.jsonl
+*.jsonl
+
+# ── Generated / temporary analysis outputs ────────────────────────────────────
+*.txt.out
+run_output.txt
+
+# ── OS / editor artefacts ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── Jupyter ────────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+notebooks/*.ipynb
