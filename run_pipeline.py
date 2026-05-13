@@ -52,6 +52,8 @@ def run_collect(max_per_source: int = 100) -> int:
     from src.collectors.slide_extractor import SlideExtractor
     from src.collectors.slide_downloader import SlideDownloader
     from src.collectors.vc_portfolio_collector import VCPortfolioCollector
+    from src.collectors.vc_website_collector import VCWebsiteCollector
+    from src.collectors.vc_decision_tracker import VCDecisionTracker
     from src.collectors.fda_collector import FDACollector
     from src.collectors.chembl_collector import ChEMBLCollector
     from src.collectors.ema_collector import EMACollector
@@ -66,6 +68,8 @@ def run_collect(max_per_source: int = 100) -> int:
         "FDA NDA/BLA approvals":        1500,
         "ClinicalTrials.gov":           3000,   # expanded: 8 disease areas + 20 pharma sponsors
         "VC Portfolio (30 firms)":       500,
+        "VC decision history":           1000,   # every trial + exit for all portfolio companies
+        "VC websites + slides":           300,
         "SEC EDGAR filings":             max_per_source,
         "PubMed clinical outcomes":      max_per_source,
         "GlobeNewsWire press releases":  max_per_source,
@@ -78,6 +82,8 @@ def run_collect(max_per_source: int = 100) -> int:
         ("FDA NDA/BLA approvals",        FDACollector()),
         ("ClinicalTrials.gov",           ClinicalTrialsCollector()),
         ("VC Portfolio (30 firms)",      VCPortfolioCollector()),
+        ("VC decision history",          VCDecisionTracker()),
+        ("VC websites + slides",          VCWebsiteCollector(base_slides_dir=Path("data/slides"))),
         ("SEC EDGAR filings",            SECEdgarCollector()),
         ("PubMed clinical outcomes",     VCScraper()),
         ("GlobeNewsWire press releases", SlideExtractor()),

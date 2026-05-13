@@ -55,6 +55,8 @@ decision_log.jsonl
 # ── Generated / temporary analysis outputs ────────────────────────────────────
 *.txt.out
 run_output.txt
+data/*.html
+data/slide_collection.log
 
 # ── OS / editor artefacts ──────────────────────────────────────────────────────
 .DS_Store
