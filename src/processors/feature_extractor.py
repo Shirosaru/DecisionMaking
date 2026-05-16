@@ -100,7 +100,7 @@ _COMPLETION_SIGNAL = re.compile(
 _FAILURE_SIGNAL = re.compile(
     r"\b(terminated|withdrawn|failed|failure|futility|missed\s+primary|"
     r"no\s+significant\s+efficacy|discontinued|halted|suspended|"
-    r"negative\s+(data|result)|did\s+not\s+meet)\b",
+    r"negative\s+(?:data|result)|did\s+not\s+meet)\b",
     re.IGNORECASE,
 )
 
