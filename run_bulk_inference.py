@@ -190,25 +190,50 @@ model = SuccessPredictor()
 metrics = model.train()
 print(f"Model ready  AUC={metrics.get('auc_roc',0):.3f}  n={metrics.get('n_train',0):,}", flush=True)
 
-programs = generate_programs(1000)
+N_PROGRAMS = 10_000
+programs = generate_programs(N_PROGRAMS)
 print(f"Scoring {len(programs)} programs …", flush=True)
 
 records = []
-for prog in programs:
+for i, prog in enumerate(programs, 1):
+    if i % 1000 == 0:
+        print(f"  {i}/{N_PROGRAMS} …", flush=True)
     r = model.explain(prog)
+    tech = r["technology"]
+    bio  = r["biology"]
+    sig  = r.get("signals", {})
+    frt  = r.get("frontier", {})
+    safety = r.get("safety_profile", {})
+    lessons = r.get("historical_lessons", [])
     records.append({
-        "id":          prog["_id"],
-        "title":       prog["title"],
-        "description": prog["description"],
-        "stage":       prog["clinical_stage"],
-        "indication":  prog["indication"],
-        "platform":    prog["_meta"]["platform"],
-        "target":      prog["_meta"]["target"],
-        "validated":   prog["_meta"]["is_validated_target"],
-        "score":       r["p_success"],
-        "verdict":     r["verdict"],
-        "calibration": r["calibration"],
-        "summary":     r.get("summary", ""),
+        "id":           prog["_id"],
+        "title":        prog["title"],
+        "description":  prog["description"],
+        "stage":        prog["clinical_stage"],
+        "indication":   prog["indication"],
+        "platform":     prog["_meta"]["platform"],
+        "target":       prog["_meta"]["target"],
+        "validated":    prog["_meta"]["is_validated_target"],
+        "score":        r["p_success"],
+        "verdict":      r["verdict"],
+        "calibration":  r["calibration"],
+        "summary":      r.get("summary", ""),
+        # rich explain fields
+        "fit_rationale":  tech.get("fit_rationale", ""),
+        "fit_score":      tech.get("fit_score", 0),
+        "is_clearcut":    tech.get("is_clearcut", False),
+        "is_bleeding_edge": tech.get("is_bleeding_edge", False),
+        "target_status":  bio.get("target_status", "unknown"),
+        "detected_targets": bio.get("detected_targets", []),
+        "signals_completion": sig.get("completion", []),
+        "signals_failure":    sig.get("failure", []),
+        "signals_safety":     sig.get("safety", []),
+        "frontier_modality":  frt.get("modality", ""),
+        "frontier_in_use":    frt.get("in_use", []),
+        "frontier_not_using": frt.get("not_using", []),
+        "safety_risks":       safety.get("risks", []),
+        "safety_summary":     safety.get("summary", ""),
+        "lessons":            [{"lesson": l.get("lesson",""), "outcome": l.get("outcome","")} for l in lessons[:3]],
     })
 
 print(f"Done. {sum(1 for r in records if r['verdict']=='GO')} GO  /  "
@@ -383,7 +408,7 @@ def dist_chart(buckets: list[int]) -> str:
             colours.append("rgba(239,68,68,0.7)")
     return f"""
     <div class="chart-box">
-      <h3>Score Distribution (all 1,000 programs)</h3>
+      <h3>Score Distribution (all {N_PROGRAMS:,} programs)</h3>
       <canvas id="distChart" height="200"></canvas>
     </div>
     <script>
@@ -479,7 +504,7 @@ HTML = f"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>REC-DECISION · 1,000-Program Trend Report</title>
+<title>REC-DECISION · 10,000-Program Trend Report</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {{
@@ -534,7 +559,7 @@ HTML = f"""<!DOCTYPE html>
 <body>
 
 <header>
-  <h1>REC-DECISION · 1,000-Program GO/NO-GO Trend Report</h1>
+  <h1>REC-DECISION · 10,000-Program GO/NO-GO Trend Report</h1>
   <div class="sub">
     {ts} &nbsp;·&nbsp;
     Model: SuccessPredictor_ensemble &nbsp;·&nbsp;
@@ -555,7 +580,7 @@ HTML = f"""<!DOCTYPE html>
 
 <h2>Key Lessons</h2>
 <div class="insight-box">
-  These patterns emerge from scoring 1,000 varied drug programs across all stages, indications, and platforms.
+  These patterns emerge from scoring {N_PROGRAMS:,} varied drug programs across all stages, indications, and platforms.
   Each bar shows the GO rate — the fraction of programs in that category the model recommends advancing.
   Use this to calibrate portfolio decisions: high GO rates mean the model finds the risk profile acceptable;
   low GO rates signal systematic risk the model has learned from historical attrition data.
@@ -618,13 +643,13 @@ HTML = f"""<!DOCTYPE html>
 
 <h2>Score Calibration — What Fires Most Often?</h2>
 <div class="chart-box">
-  <h3>Factors applied by the model during scoring (across all 1,000 programs)</h3>
+  <h3>Factors applied by the model during scoring (across all {N_PROGRAMS:,} programs)</h3>
   {cal_factor_table(cal_counts)}
 </div>
 
 </main>
 
-<footer>REC-DECISION · 1,000-Program Simulation · {ts}</footer>
+<footer>REC-DECISION · {N_PROGRAMS:,}-Program Simulation · {ts}</footer>
 </body>
 </html>
 """
@@ -632,26 +657,46 @@ HTML = f"""<!DOCTYPE html>
 # ── Individual program table (JSON embedded for JS filtering) ─────────────
 table_rows_json = json.dumps([
     {
-        "id":          r["id"],
-        "title":       r["title"],
-        "description": r["description"],
-        "stage":       STAGE_LABEL.get(r["stage"], r["stage"]),
-        "indication":  IND_LABEL.get(r["indication"], r["indication"]),
-        "platform":    r["platform"],
-        "target":      r["target"],
-        "validated":   r["validated"],
-        "score":       round(r["score"] * 100, 1),
-        "verdict":     r["verdict"],
-        "calibration": r["calibration"],
-        "summary":     r["summary"],
+        "id":           r["id"],
+        "title":        r["title"],
+        "description":  r["description"],
+        "stage":        STAGE_LABEL.get(r["stage"], r["stage"]),
+        "indication":   IND_LABEL.get(r["indication"], r["indication"]),
+        "platform":     r["platform"],
+        "target":       r["target"],
+        "validated":    r["validated"],
+        "score":        round(r["score"] * 100, 1),
+        "verdict":      r["verdict"],
+        "calibration":  r["calibration"],
+        "summary":      r["summary"],
+        # WHY / HOW fields
+        "fit_rationale":    r.get("fit_rationale", ""),
+        "fit_score":        round(r.get("fit_score", 0) * 100),
+        "is_clearcut":      r.get("is_clearcut", False),
+        "is_bleeding_edge": r.get("is_bleeding_edge", False),
+        "target_status":    r.get("target_status", "unknown"),
+        "detected_targets": r.get("detected_targets", []),
+        "sig_completion":   r.get("signals_completion", []),
+        "sig_failure":      r.get("signals_failure", []),
+        "sig_safety":       r.get("signals_safety", []),
+        "safety_summary":   r.get("safety_summary", ""),
+        "safety_risks":     r.get("safety_risks", []),
+        "frontier_modality": r.get("frontier_modality", ""),
+        "frontier_in_use":   [{"tech": e.get("tech",""), "status": e.get("status",""),
+                                "pursuit": e.get("pursuit_level",""), "note": e.get("note","")}
+                               for e in r.get("frontier_in_use", [])[:3]],
+        "frontier_missing":  [{"tech": e.get("tech",""), "status": e.get("status",""),
+                                "pursuit": e.get("pursuit_level","")}
+                               for e in r.get("frontier_not_using", [])[:3]],
+        "lessons":           r.get("lessons", []),
     }
     for r in sorted(records, key=lambda x: -x["score"])
 ])
 
 INDIVIDUAL_SECTION = f"""
-<h2>All 1,000 Programs — Individual Detail</h2>
+<h2>All {N_PROGRAMS:,} Programs — Individual Detail &amp; Investment Thesis</h2>
 <div class="table-controls">
-  <input id="searchBox" type="text" placeholder="Search ID, target, platform, indication …" oninput="filterTable()">
+  <input id="searchBox" type="text" placeholder="Search by ID, target, platform, indication, hypothesis text …" oninput="filterTable()">
   <select id="verdictFilter" onchange="filterTable()">
     <option value="">All verdicts</option>
     <option value="GO">GO only</option>
@@ -669,6 +714,11 @@ INDIVIDUAL_SECTION = f"""
     <option>Cardiovascular</option><option>Metabolic</option>
     <option>Infectious Disease</option>
   </select>
+  <select id="targetFilter" onchange="filterTable()">
+    <option value="">All target types</option>
+    <option value="validated">Validated targets</option>
+    <option value="unvalidated">Novel targets</option>
+  </select>
   <span id="countLabel" class="count-label"></span>
 </div>
 <div id="programTable"></div>
@@ -678,96 +728,187 @@ var ALL_PROGRAMS = {table_rows_json};
 var filtered = ALL_PROGRAMS.slice();
 var PAGE = 50, page = 0;
 
-function scoreColour(s) {{
-  if (s >= 65) return '#22c55e';
-  if (s >= 45) return '#f59e0b';
-  return '#ef4444';
+function sc(s) {{
+  return s >= 65 ? '#22c55e' : s >= 45 ? '#f59e0b' : '#ef4444';
 }}
-
+function escH(s) {{
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}}
 function calRows(cal) {{
-  if (!cal || !cal.length) return '<span style="color:#64748b">No adjustments</span>';
-  return cal.map(c => {{
+  if (!cal||!cal.length) return '<span style="color:#64748b">None</span>';
+  return cal.map(function(c) {{
     var col = c.adjustment.startsWith('+') ? '#22c55e' : '#ef4444';
-    return '<span style="color:'+col+';font-weight:600">'+c.adjustment+'</span> '+c.factor;
+    return '<span style="color:'+col+';font-weight:700">'+c.adjustment+'</span> '+escH(c.factor);
   }}).join('<br>');
+}}
+function tags(arr, col) {{
+  if (!arr||!arr.length) return '<span style="color:#64748b">—</span>';
+  return arr.map(function(t) {{
+    return '<span style="background:'+col+'22;color:'+col+';padding:1px 7px;border-radius:8px;font-size:11px;margin-right:4px">'+escH(t)+'</span>';
+  }}).join('');
+}}
+function frontierRows(items, col) {{
+  if (!items||!items.length) return '<span style="color:#64748b">—</span>';
+  return items.map(function(e) {{
+    var note = e.note ? ' <span style="color:#64748b;font-size:11px">— '+escH(e.note)+'</span>' : '';
+    return '<div style="margin-bottom:4px"><span style="color:'+col+';font-weight:600">'+escH(e.tech)+'</span>'
+         + ' <span style="color:#64748b;font-size:11px">['+escH(e.status)+' · '+escH(e.pursuit)+']</span>'+note+'</div>';
+  }}).join('');
+}}
+function lessonRows(lessons) {{
+  if (!lessons||!lessons.length) return '<span style="color:#64748b">No historical lessons found.</span>';
+  return lessons.map(function(l) {{
+    var outcome = l.outcome ? ' <span style="color:#64748b;font-size:11px">('+escH(l.outcome)+')</span>' : '';
+    return '<div style="margin-bottom:5px;padding-left:10px;border-left:2px solid #38bdf8;font-size:12px;color:#94a3b8">'+escH(l.lesson)+outcome+'</div>';
+  }}).join('');
+}}
+function miniBar(pct) {{
+  var col = sc(pct);
+  return '<div style="height:6px;background:#293548;border-radius:3px;overflow:hidden;margin-top:2px">'
+       + '<div style="width:'+pct+'%;height:100%;background:'+col+';border-radius:3px"></div></div>';
 }}
 
 function renderTable() {{
   var start = page * PAGE, end = Math.min(start + PAGE, filtered.length);
-  var rows = filtered.slice(start, end).map(function(r, i) {{
+  var html = '';
+  filtered.slice(start, end).forEach(function(r, i) {{
     var brd = r.verdict === 'GO' ? '#22c55e' : '#ef4444';
     var badge = r.verdict === 'GO'
       ? '<span class="badge badge-go">▲ GO</span>'
       : '<span class="badge badge-nogo">▼ NO-GO</span>';
-    var validTag = r.validated
-      ? '<span class="vtag vtag-val">validated</span>'
-      : '<span class="vtag vtag-nov">novel</span>';
-    var uid = 'row-' + (start+i);
-    return [
-      '<div class="prog-row" style="border-left:4px solid '+brd+'" id="'+uid+'">',
-      '  <div class="prog-row-header" onclick="toggleDetail(\''+uid+'\')" style="cursor:pointer">',
-      '    <div class="prog-row-left">',
-      '      <span class="prog-id-sm">'+r.id+'</span>',
-      '      <span class="prog-title-sm">'+r.title+'</span>',
-      '      '+validTag,
-      '    </div>',
-      '    <div class="prog-row-right">',
-      '      <span class="stage-chip">'+r.stage+'</span>',
-      '      <span class="ind-chip">'+r.indication+'</span>',
-      '      <span class="score-sm" style="color:'+scoreColour(r.score)+'">'+r.score+'%</span>',
-      '      '+badge,
-      '      <span class="expand-icon">▾</span>',
-      '    </div>',
-      '  </div>',
-      '  <div class="prog-detail" id="detail-'+uid+'" style="display:none">',
-      '    <p class="hyp-text">'+r.description+'</p>',
-      '    <div class="detail-grid">',
-      '      <div><div class="detail-label">Platform</div><div class="detail-val">'+r.platform+'</div></div>',
-      '      <div><div class="detail-label">Target</div><div class="detail-val">'+r.target+'</div></div>',
-      '      <div><div class="detail-label">Calibration</div><div class="detail-val">'+calRows(r.calibration)+'</div></div>',
-      '      <div><div class="detail-label">Model summary</div><div class="detail-val summary-sm">'+r.summary+'</div></div>',
-      '    </div>',
-      '  </div>',
-      '</div>',
-    ].join('\\n');
-  }}).join('');
+    var vtag = r.validated
+      ? '<span class="vtag vtag-val">✓ validated target</span>'
+      : '<span class="vtag vtag-nov">⚠ novel target</span>';
+    var be = r.is_bleeding_edge
+      ? '<span class="vtag" style="background:rgba(56,189,248,.12);color:#38bdf8">bleeding-edge</span>' : '';
+    var cc = r.is_clearcut
+      ? '<span class="vtag" style="background:rgba(52,211,153,.12);color:#34d399">clear-cut fit</span>' : '';
+    var uid = 'r'+(start+i);
 
-  document.getElementById('programTable').innerHTML = rows + renderPager(start, end);
+    html += '<div class="prog-row" style="border-left:4px solid '+brd+'" id="'+uid+'">';
+    // ── header row ──
+    html += '<div class="prog-row-header" onclick="td(\''+uid+'\')" style="cursor:pointer">';
+    html += '  <div class="prog-row-left">';
+    html += '    <span class="prog-id-sm">'+r.id+'</span>';
+    html += '    <span class="prog-title-sm">'+escH(r.title)+'</span>';
+    html += '    '+vtag+be+cc;
+    html += '  </div>';
+    html += '  <div class="prog-row-right">';
+    html += '    <span class="stage-chip">'+r.stage+'</span>';
+    html += '    <span class="ind-chip">'+r.indication+'</span>';
+    html += '    <div style="text-align:right;min-width:60px"><span class="score-sm" style="color:'+sc(r.score)+'">'+r.score+'%</span>'+miniBar(r.score)+'</div>';
+    html += '    '+badge;
+    html += '    <span class="expand-icon" id="ei-'+uid+'">▾</span>';
+    html += '  </div>';
+    html += '</div>';
+
+    // ── expanded detail ──
+    html += '<div class="prog-detail" id="d-'+uid+'" style="display:none">';
+
+    // Hypothesis
+    html += '<div class="thesis-section">';
+    html += '<div class="thesis-label">📋 Hypothesis</div>';
+    html += '<p class="hyp-text">'+escH(r.description)+'</p>';
+    html += '</div>';
+
+    // Why GO/NO-GO
+    html += '<div class="thesis-section">';
+    html += '<div class="thesis-label">🧠 Why '+(r.verdict === 'GO' ? 'GO' : 'NO-GO')+'</div>';
+    html += '<p class="summary-sm" style="margin-bottom:8px">'+escH(r.summary)+'</p>';
+    html += '<div style="margin-bottom:6px"><strong style="font-size:11px;color:#64748b">SCORE DRIVERS</strong><br>'+calRows(r.calibration)+'</div>';
+    if (r.fit_rationale) {{
+      html += '<div style="margin-top:6px;font-size:12px;color:#94a3b8;border-left:2px solid #38bdf8;padding-left:8px">'+escH(r.fit_rationale)+'</div>';
+    }}
+    html += '</div>';
+
+    // Biology
+    html += '<div class="detail-grid" style="margin-top:14px">';
+    html += '<div class="sub-box">';
+    html += '<div class="thesis-label">🎯 Target Biology</div>';
+    html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:#64748b">TARGET STATUS: </span>'
+          + '<span style="font-weight:600;color:'+(r.target_status==="validated"?"#22c55e":r.target_status==="unvalidated"?"#f59e0b":"#94a3b8")+'">'+r.target_status.toUpperCase()+'</span></div>';
+    html += '<div style="margin-bottom:6px"><span style="font-size:11px;color:#64748b">DETECTED: </span>'+tags(r.detected_targets,'#a78bfa')+'</div>';
+    if (r.sig_completion&&r.sig_completion.length) html += '<div style="margin-top:4px"><span style="font-size:11px;color:#64748b">POSITIVE SIGNALS: </span>'+tags(r.sig_completion,'#22c55e')+'</div>';
+    if (r.sig_failure&&r.sig_failure.length) html += '<div style="margin-top:4px"><span style="font-size:11px;color:#64748b">FAILURE SIGNALS: </span>'+tags(r.sig_failure,'#ef4444')+'</div>';
+    if (r.sig_safety&&r.sig_safety.length) html += '<div style="margin-top:4px"><span style="font-size:11px;color:#64748b">SAFETY FLAGS: </span>'+tags(r.sig_safety,'#f59e0b')+'</div>';
+    html += '</div>';
+
+    // Safety
+    html += '<div class="sub-box">';
+    html += '<div class="thesis-label">⚠ Safety Profile</div>';
+    if (r.safety_summary) html += '<p style="font-size:12px;color:#94a3b8;margin-bottom:8px">'+escH(r.safety_summary)+'</p>';
+    html += tags(r.safety_risks, '#f59e0b');
+    if (!r.safety_summary&&(!r.safety_risks||!r.safety_risks.length)) html += '<span style="color:#64748b;font-size:12px">No specific safety concerns flagged.</span>';
+    html += '</div>';
+    html += '</div>'; // close detail-grid
+
+    // Frontier tech
+    html += '<div class="detail-grid" style="margin-top:14px">';
+    html += '<div class="sub-box">';
+    html += '<div class="thesis-label">🚀 Frontier Tech In Use</div>';
+    html += frontierRows(r.frontier_in_use, '#34d399');
+    html += '</div>';
+    html += '<div class="sub-box">';
+    html += '<div class="thesis-label">💡 High-Pursuit Tech NOT Used</div>';
+    html += frontierRows(r.frontier_missing, '#f59e0b');
+    html += '</div>';
+    html += '</div>';
+
+    // Historical lessons
+    html += '<div class="sub-box" style="margin-top:14px">';
+    html += '<div class="thesis-label">📚 Historical Lessons for This Modality</div>';
+    html += lessonRows(r.lessons);
+    html += '</div>';
+
+    html += '</div>'; // end prog-detail
+    html += '</div>'; // end prog-row
+  }});
+
+  document.getElementById('programTable').innerHTML = html + renderPager(start, end);
   document.getElementById('countLabel').textContent =
     'Showing ' + (start+1) + '–' + end + ' of ' + filtered.length + ' programs';
 }}
 
 function renderPager(start, end) {{
-  var totalPages = Math.ceil(filtered.length / PAGE);
-  if (totalPages <= 1) return '';
-  var btns = '<div class="pager">';
-  if (page > 0) btns += '<button onclick="goPage('+(page-1)+')">&laquo; Prev</button>';
-  btns += '<span style="color:#94a3b8;margin:0 12px">Page '+(page+1)+' / '+totalPages+'</span>';
-  if (end < filtered.length) btns += '<button onclick="goPage('+(page+1)+')">Next &raquo;</button>';
-  return btns + '</div>';
+  var tp = Math.ceil(filtered.length / PAGE);
+  if (tp <= 1) return '';
+  var b = '<div class="pager">';
+  if (page > 0) b += '<button onclick="goPage('+(page-1)+')">&laquo; Prev</button>';
+  b += '<span style="color:#94a3b8;margin:0 16px">Page '+(page+1)+' / '+tp+'</span>';
+  if (end < filtered.length) b += '<button onclick="goPage('+(page+1)+')">Next &raquo;</button>';
+  return b + '</div>';
 }}
 
-function goPage(p) {{ page = p; renderTable(); window.scrollTo(0,document.getElementById('programTable').offsetTop - 80); }}
+function goPage(p) {{
+  page = p;
+  renderTable();
+  var el = document.getElementById('programTable');
+  if (el) window.scrollTo({{top: el.offsetTop - 80, behavior: 'smooth'}});
+}}
 
-function toggleDetail(uid) {{
-  var d = document.getElementById('detail-'+uid);
-  var icon = document.querySelector('#'+uid+' .expand-icon');
+function td(uid) {{
+  var d = document.getElementById('d-'+uid);
+  var icon = document.getElementById('ei-'+uid);
   if (d.style.display === 'none') {{ d.style.display = 'block'; icon.textContent = '▴'; }}
   else {{ d.style.display = 'none'; icon.textContent = '▾'; }}
 }}
 
 function filterTable() {{
-  var q = document.getElementById('searchBox').value.toLowerCase();
+  var q  = document.getElementById('searchBox').value.toLowerCase();
   var vf = document.getElementById('verdictFilter').value;
   var sf = document.getElementById('stageFilter').value;
-  var inf = document.getElementById('indFilter').value;
+  var inf= document.getElementById('indFilter').value;
+  var tf = document.getElementById('targetFilter').value;
   filtered = ALL_PROGRAMS.filter(function(r) {{
     if (vf && r.verdict !== vf) return false;
     if (sf && r.stage !== sf) return false;
     if (inf && r.indication !== inf) return false;
+    if (tf === 'validated' && !r.validated) return false;
+    if (tf === 'unvalidated' && r.validated) return false;
     if (q) {{
-      var haystack = (r.id+' '+r.title+' '+r.target+' '+r.platform+' '+r.indication+' '+r.description).toLowerCase();
-      if (haystack.indexOf(q) === -1) return false;
+      var hay = [r.id,r.title,r.target,r.platform,r.indication,r.description,
+                 r.summary,r.fit_rationale,(r.detected_targets||[]).join(' ')].join(' ').toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
     }}
     return true;
   }});
@@ -782,47 +923,49 @@ filterTable();
 HTML = HTML.replace('</main>', INDIVIDUAL_SECTION + '</main>')
 
 HTML = HTML.replace('</style>', """
-  .table-controls {{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }}
-  .table-controls input, .table-controls select {{
+  .table-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+  .table-controls input, .table-controls select {
     background:var(--surface); border:1px solid var(--border); color:var(--text);
-    border-radius:8px; padding:8px 14px; font-size:13px; outline:none;
-  }}
-  .table-controls input {{ flex:1; min-width:200px; }}
-  .table-controls input:focus, .table-controls select:focus {{ border-color:var(--accent); }}
-  .count-label {{ color:var(--muted); font-size:12px; margin-left:auto; }}
-  .prog-row {{ background:var(--surface); border:1px solid var(--border); border-radius:10px;
-               margin-bottom:8px; overflow:hidden; }}
-  .prog-row-header {{ display:flex; justify-content:space-between; align-items:center;
-                      padding:12px 16px; gap:12px; }}
-  .prog-row-left {{ display:flex; align-items:center; gap:10px; flex:1; min-width:0; }}
-  .prog-row-right {{ display:flex; align-items:center; gap:10px; flex-shrink:0; }}
-  .prog-id-sm {{ font-size:11px; color:var(--muted); font-weight:600; white-space:nowrap; }}
-  .prog-title-sm {{ font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden;
-                    text-overflow:ellipsis; max-width:320px; }}
-  .vtag {{ font-size:10px; padding:2px 8px; border-radius:10px; white-space:nowrap; font-weight:600; }}
-  .vtag-val {{ background:rgba(34,197,94,.15); color:#22c55e; }}
-  .vtag-nov {{ background:rgba(245,158,11,.15); color:#f59e0b; }}
-  .stage-chip {{ font-size:11px; padding:2px 8px; background:var(--surface2);
-                 border-radius:6px; color:var(--muted); white-space:nowrap; }}
-  .ind-chip {{ font-size:11px; padding:2px 8px; background:rgba(56,189,248,.1);
-               border-radius:6px; color:#38bdf8; white-space:nowrap; }}
-  .score-sm {{ font-size:18px; font-weight:800; width:54px; text-align:right; }}
-  .expand-icon {{ font-size:16px; color:var(--muted); width:16px; text-align:center; }}
-  .prog-detail {{ padding:14px 18px 18px; border-top:1px solid var(--border); background:var(--surface2); }}
-  .hyp-text {{ font-size:13px; color:#94a3b8; margin-bottom:14px; font-style:italic; }}
-  .detail-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }}
-  @media(max-width:600px){{ .detail-grid {{ grid-template-columns:1fr; }} }}
-  .detail-label {{ font-size:10px; text-transform:uppercase; letter-spacing:.08em;
-                   color:var(--muted); margin-bottom:4px; }}
-  .detail-val {{ font-size:13px; line-height:1.6; }}
-  .summary-sm {{ color:#bae6fd; font-size:12px; }}
-  .pager {{ display:flex; justify-content:center; align-items:center; padding:16px 0; }}
-  .pager button {{ background:var(--surface2); border:1px solid var(--border); color:var(--text);
-                   border-radius:8px; padding:8px 18px; cursor:pointer; font-size:13px; }}
-  .pager button:hover {{ border-color:var(--accent); color:var(--accent); }}
-  .badge {{ display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }}
-  .badge-go {{ background:rgba(34,197,94,.15); color:#22c55e; border:1px solid #22c55e; }}
-  .badge-nogo {{ background:rgba(239,68,68,.15); color:#ef4444; border:1px solid #ef4444; }}
+    border-radius:8px; padding:8px 12px; font-size:13px; outline:none;
+  }
+  .table-controls input { flex:1; min-width:220px; }
+  .table-controls input:focus, .table-controls select:focus { border-color:var(--accent); }
+  .count-label { color:var(--muted); font-size:12px; margin-left:auto; white-space:nowrap; }
+  .prog-row { background:var(--surface); border:1px solid var(--border); border-radius:10px;
+              margin-bottom:8px; overflow:hidden; transition: border-color .15s; }
+  .prog-row:hover { border-color:#475569; }
+  .prog-row-header { display:flex; justify-content:space-between; align-items:center;
+                     padding:12px 16px; gap:12px; }
+  .prog-row-left { display:flex; align-items:center; gap:8px; flex:1; min-width:0; flex-wrap:wrap; }
+  .prog-row-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .prog-id-sm { font-size:11px; color:var(--muted); font-weight:600; white-space:nowrap; }
+  .prog-title-sm { font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden;
+                   text-overflow:ellipsis; max-width:300px; }
+  .vtag { font-size:10px; padding:2px 7px; border-radius:8px; white-space:nowrap; font-weight:600; }
+  .vtag-val { background:rgba(34,197,94,.12); color:#22c55e; }
+  .vtag-nov { background:rgba(245,158,11,.12); color:#f59e0b; }
+  .stage-chip { font-size:11px; padding:2px 8px; background:var(--surface2);
+                border-radius:6px; color:var(--muted); white-space:nowrap; }
+  .ind-chip { font-size:11px; padding:2px 8px; background:rgba(56,189,248,.1);
+              border-radius:6px; color:#38bdf8; white-space:nowrap; }
+  .score-sm { font-size:18px; font-weight:800; }
+  .expand-icon { font-size:16px; color:var(--muted); }
+  .prog-detail { padding:16px 20px 20px; border-top:1px solid var(--border); background:#182032; }
+  .thesis-section { margin-bottom:14px; }
+  .thesis-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+                  color:var(--muted); margin-bottom:6px; }
+  .hyp-text { font-size:13px; color:#94a3b8; font-style:italic; line-height:1.7; }
+  .summary-sm { font-size:13px; color:#bae6fd; line-height:1.6; }
+  .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media(max-width:640px){ .detail-grid { grid-template-columns:1fr; } }
+  .sub-box { background:var(--surface2); border-radius:8px; padding:14px 16px; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }
+  .badge-go { background:rgba(34,197,94,.15); color:#22c55e; border:1px solid #22c55e; }
+  .badge-nogo { background:rgba(239,68,68,.15); color:#ef4444; border:1px solid #ef4444; }
+  .pager { display:flex; justify-content:center; align-items:center; padding:18px 0; }
+  .pager button { background:var(--surface2); border:1px solid var(--border); color:var(--text);
+                  border-radius:8px; padding:8px 20px; cursor:pointer; font-size:13px; }
+  .pager button:hover { border-color:var(--accent); color:var(--accent); }
 </style>""")
 
 out = Path("data/bulk_inference_report.html")
