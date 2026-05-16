@@ -239,7 +239,7 @@ class SuccessPredictor:
             {"lr_C": 0.5, "gb_n": 80},
             **kwargs,
         )
-        return {"auc": round(auc, 4), "accuracy": round(acc, 4), "n_train": len(X_train), "n_test": len(X_test)}
+        return {"auc_roc": round(auc, 4), "accuracy": round(acc, 4), "n_train": len(X_train), "n_test": len(X_test)}
 
     def predict(self, row: dict[str, Any]) -> float:
         """
