@@ -762,6 +762,44 @@ function lessonRows(lessons) {{
     return '<div style="margin-bottom:5px;padding-left:10px;border-left:2px solid #38bdf8;font-size:12px;color:#94a3b8">'+escH(l.lesson)+outcome+'</div>';
   }}).join('');
 }}
+
+var IND_CT_MAP = {{
+  'Oncology':'cancer','Rare Disease':'rare+disease','Immunology':'autoimmune',
+  'Neurology':'neurological','Cardiovascular':'cardiovascular',
+  'Metabolic':'metabolic','Infectious Disease':'infectious+disease'
+}};
+
+function resourceLinks(r) {{
+  var tgt  = encodeURIComponent(r.target);
+  var cond = encodeURIComponent(IND_CT_MAP[r.indication] || r.indication);
+  var plat = encodeURIComponent(r.platform);
+  var qpm  = encodeURIComponent(r.target + ' ' + r.indication + ' clinical trial');
+  var links = [
+    {{ url:'https://clinicaltrials.gov/search?cond='+cond+'&term='+tgt,
+       icon:'🔬', label:'ClinicalTrials.gov',
+       why:'Active &amp; completed trials for <strong>'+escH(r.target)+'</strong> in <strong>'+escH(r.indication)+'</strong> — compare pipeline density and phase distribution' }},
+    {{ url:'https://pubmed.ncbi.nlm.nih.gov/?term='+qpm+'&sort=date',
+       icon:'📄', label:'PubMed',
+       why:'Recent publications on <strong>'+escH(r.target)+'</strong> mechanism, validation, and clinical evidence' }},
+    {{ url:'https://www.ebi.ac.uk/chembl/explore/targets?q='+tgt,
+       icon:'🧬', label:'ChEMBL Target',
+       why:'Compound activity data, selectivity profiles, and known liabilities for <strong>'+escH(r.target)+'</strong>' }},
+    {{ url:'https://clinicaltrials.gov/search?term='+tgt+'&aggFilters=phase:3+4',
+       icon:'📊', label:'Late-Stage Competitors',
+       why:'Phase 3/4 trials on the same target — assess competitive crowding and differentiation need' }},
+    {{ url:'https://www.fda.gov/drugs/drug-approvals-and-databases/drugsfda-data-files',
+       icon:'🏛', label:'FDA Approvals',
+       why:'Historical approval precedent for <strong>'+escH(r.platform)+'</strong> modality — assess regulatory pathway risk' }}
+  ];
+  return '<div class="res-grid">'
+    + links.map(function(l) {{
+        return '<a class="res-card" href="'+l.url+'" target="_blank" rel="noopener noreferrer">'
+          + '<div class="res-header"><span class="res-icon">'+l.icon+'</span>'
+          + '<span class="res-label">'+l.label+'</span><span class="res-ext">↗</span></div>'
+          + '<div class="res-why">'+l.why+'</div></a>';
+      }}).join('')
+    + '</div>';
+}}
 function miniBar(pct) {{
   var col = sc(pct);
   return '<div style="height:6px;background:#293548;border-radius:3px;overflow:hidden;margin-top:2px">'
@@ -858,6 +896,12 @@ function renderTable() {{
     html += '<div class="sub-box" style="margin-top:14px">';
     html += '<div class="thesis-label">📚 Historical Lessons for This Modality</div>';
     html += lessonRows(r.lessons);
+    html += '</div>';
+
+    // Research resource links
+    html += '<div style="margin-top:16px">';
+    html += '<div class="thesis-label" style="margin-bottom:10px">🔗 Research Resources &amp; Due-Diligence Links</div>';
+    html += resourceLinks(r);
     html += '</div>';
 
     html += '</div>'; // end prog-detail
@@ -966,6 +1010,17 @@ HTML = HTML.replace('</style>', """
   .pager button { background:var(--surface2); border:1px solid var(--border); color:var(--text);
                   border-radius:8px; padding:8px 20px; cursor:pointer; font-size:13px; }
   .pager button:hover { border-color:var(--accent); color:var(--accent); }
+  .res-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; margin-top:4px; }
+  .res-card { display:flex; flex-direction:column; gap:6px; background:var(--surface);
+              border:1px solid var(--border); border-radius:8px; padding:11px 13px;
+              text-decoration:none; color:inherit; transition:border-color .15s,background .15s; }
+  .res-card:hover { border-color:var(--accent); background:#1a2944; }
+  .res-header { display:flex; align-items:center; gap:6px; }
+  .res-icon { font-size:14px; }
+  .res-label { font-size:12px; font-weight:700; color:var(--accent); flex:1; }
+  .res-ext { font-size:11px; color:var(--muted); }
+  .res-why { font-size:11px; color:#94a3b8; line-height:1.55; }
+  .res-why strong { color:#cbd5e1; font-weight:600; }
 </style>""")
 
 out = Path("data/bulk_inference_report.html")
