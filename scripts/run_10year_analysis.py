@@ -25,8 +25,11 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-DB_PATH      = Path("data/bioventure.json")
-REPORT_PATH  = Path("data/30year_analysis.txt")
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+DB_PATH      = _ROOT / "data" / "bioventure.json"
+REPORT_PATH  = _ROOT / "data" / "reports" / "30year_analysis.txt"
 SOURCES      = {"historical_cohort", "hist30_cohort", "vc_portfolio"}   # generators + real VC data
 CURRENT_YEAR = 2026
 START_YEAR   = 1996

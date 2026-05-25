@@ -36,9 +36,12 @@ data/bioventure.db
 data/bioventure.json
 data/bioventure_test.json
 data/synthetic_poc.json
-data/10year_analysis.txt
-data/30year_analysis.txt
+data/failure_patterns.json
 data/slides/
+data/reports/
+data/logs/
+data/*.log
+data/*.txt
 
 # ── Trained model artefacts ───────────────────────────────────────────────────
 models/
@@ -57,6 +60,7 @@ decision_log.jsonl
 run_output.txt
 data/*.html
 data/slide_collection.log
+data/deepen_training.log
 
 # ── OS / editor artefacts ──────────────────────────────────────────────────────
 .DS_Store

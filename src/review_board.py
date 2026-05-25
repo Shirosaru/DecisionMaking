@@ -13,7 +13,7 @@ from typing import Any
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from decision_agents import (
+from .decision_agents import (
     AgentRole,
     AgentAnalysis,
     ClinicalAgent,

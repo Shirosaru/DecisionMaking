@@ -23,7 +23,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_ROOT = Path(__file__).resolve().parent.parent
 
 from src.collectors.base_collector import RawRecord
 from src.learning.decision_model import SuccessPredictor
@@ -33,8 +34,8 @@ from src.storage.repository import bulk_upsert, fetch_all
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-PORTFOLIO_DIR = Path("data/slides/portfolio")
-REPORT_OUT    = Path("data/portfolio_training_report.html")
+PORTFOLIO_DIR = _ROOT / "data" / "slides" / "portfolio"
+REPORT_OUT    = _ROOT / "data" / "reports" / "portfolio_training_report.html"
 DB_SOURCE     = "vc_portfolio_v2"
 
 # ── Company catalog ────────────────────────────────────────────────────────────

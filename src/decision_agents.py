@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from claude_api import call_claude_agent, format_project_context, _parse_confidence, _parse_bullet_list
+from .claude_api import call_claude_agent, format_project_context, _parse_confidence, _parse_bullet_list
 
 
 class AgentRole(str, Enum):

@@ -19,8 +19,12 @@ from __future__ import annotations
 
 import math
 import random
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
@@ -32,7 +36,7 @@ from sklearn.preprocessing import StandardScaler
 from src.storage.repository import fetch_all
 from src.processors.feature_extractor import extract_features, label_for_training, STAGE_WEIGHTS
 
-DB_PATH = Path("data/bioventure.json")
+DB_PATH = _ROOT / "data" / "bioventure.json"
 SEP = "═" * 72
 
 

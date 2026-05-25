@@ -34,8 +34,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("slides")
 
-DB_PATH     = Path("data/bioventure.json")
-SLIDES_ROOT = Path("data/slides")
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+DB_PATH     = _ROOT / "data" / "bioventure.json"
+SLIDES_ROOT = _ROOT / "data" / "slides"
 
 # ── ensure output directories exist ──────────────────────────────────────────
 for sub in ("vc", "startup", "conference", "edgar"):

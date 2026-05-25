@@ -98,7 +98,8 @@ DEFAULT_PROGRAMS = [
 
 # ── load model ────────────────────────────────────────────────────────────────
 print("Loading model …", flush=True)
-sys.path.insert(0, str(Path(__file__).parent))
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 from src.learning.decision_model import SuccessPredictor
 
 model = SuccessPredictor()
@@ -347,7 +348,7 @@ HTML = f"""<!DOCTYPE html>
 </html>
 """
 
-out = Path("data/inference_report.html")
+out = _ROOT / "data" / "reports" / "inference_report.html"
 out.write_text(HTML)
 print(f"\nReport written → {out.resolve()}")
 print(f"Open in browser:  file://{out.resolve()}")

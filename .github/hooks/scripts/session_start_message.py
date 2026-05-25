@@ -21,7 +21,7 @@ def _count_slides() -> dict[str, int]:
     return counts
 
 def _count_decisions() -> int:
-    log = _REPO / "decision_log.jsonl"
+    log = _REPO / "data" / "logs" / "decision_log.jsonl"
     if not log.exists():
         return 0
     try:

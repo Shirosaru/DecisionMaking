@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from pharma_decision_engine import (
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+from src.pharma_decision_engine import (
     DecisionEngine,
     DecisionPolicy,
     Evidence,
@@ -60,7 +64,7 @@ def run_one_project(project: dict) -> None:
 
 
 def main() -> None:
-    dataset_path = Path("data/synthetic_poc.json")
+    dataset_path = _ROOT / "data" / "synthetic_poc.json"
     projects = load_projects(dataset_path)
 
     print("Loaded synthetic projects:", len(projects))

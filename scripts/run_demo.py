@@ -25,8 +25,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("demo")
 
-DB_PATH    = Path("data/bioventure.json")
-SLIDES_DIR = Path("data/slides/edgar")
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+DB_PATH    = _ROOT / "data" / "bioventure.json"
+SLIDES_DIR = _ROOT / "data" / "slides" / "edgar"
 
 SEPARATOR = "\n" + "═" * 66
 

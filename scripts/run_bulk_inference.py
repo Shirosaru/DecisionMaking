@@ -11,7 +11,8 @@ from datetime import datetime
 from pathlib import Path
 
 random.seed(42)
-sys.path.insert(0, str(Path(__file__).parent))
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. PROGRAM GENERATOR
@@ -1023,7 +1024,7 @@ HTML = HTML.replace('</style>', """
   .res-why strong { color:#cbd5e1; font-weight:600; }
 </style>""")
 
-out = Path("data/bulk_inference_report.html")
+out = _ROOT / "data" / "reports" / "bulk_inference_report.html"
 out.write_text(HTML)
 print(f"\nReport written → {out.resolve()}")
 print(f"Open in browser:  file://{out.resolve()}")

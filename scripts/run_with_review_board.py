@@ -12,13 +12,17 @@ This is the next-level workflow:
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 from typing import Any
 
-from pharma_decision_engine import ProjectState, Evidence, DecisionEngine
-from review_board import ReviewBoard, DecisionBrief
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+from src.pharma_decision_engine import ProjectState, Evidence, DecisionEngine
+from src.review_board import ReviewBoard, DecisionBrief
 
 
 @dataclass(frozen=True)
@@ -159,7 +163,7 @@ def interactive_decision_flow(brief: DecisionBrief, auto_align: bool = False) ->
     )
 
 
-def save_decision_log(log: HumanDecisionLog, log_file: Path = Path("decision_log.jsonl")) -> None:
+def save_decision_log(log: HumanDecisionLog, log_file: Path = _ROOT / "data" / "logs" / "decision_log.jsonl") -> None:
     """Append decision to log file for future learning."""
     log_dict = {
         "timestamp": log.timestamp,
@@ -180,7 +184,7 @@ def save_decision_log(log: HumanDecisionLog, log_file: Path = Path("decision_log
 def main() -> None:
     """Demo: run review board on a synthetic project."""
     # Load synthetic data
-    dataset_path = Path("data/synthetic_poc.json")
+    dataset_path = _ROOT / "data" / "synthetic_poc.json"
     with dataset_path.open() as f:
         data = json.load(f)
     

@@ -30,7 +30,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_ROOT = Path(__file__).resolve().parent.parent
 
 from src.collectors.base_collector import RawRecord
 from src.learning.decision_model import SuccessPredictor
@@ -40,8 +41,8 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-PORTFOLIO_DIR = Path("data/slides/portfolio")
-REPORT_OUT    = Path("data/full_portfolio_analysis.html")
+PORTFOLIO_DIR = _ROOT / "data" / "slides" / "portfolio"
+REPORT_OUT    = _ROOT / "data" / "reports" / "full_portfolio_analysis.html"
 DB_SOURCE     = "bioventures_full_v1"
 RATE          = 0.35   # seconds between HTTP calls
 
@@ -1154,7 +1155,77 @@ def _firm_row(firm: str, cos: list[dict]) -> str:
     )
 
 
-def _company_card(r: dict) -> str:
+_SEC_STYLE = (
+    'style="font-size:10px;font-weight:700;color:#6b7280;'
+    'text-transform:uppercase;letter-spacing:.07em;'
+    'margin:12px 0 5px;border-top:1px solid #f3f4f6;padding-top:10px"'
+)
+
+
+def _narrative(r: dict) -> str:
+    """Build 2-3 sentence investment rationale from model data."""
+    p       = r["p_success"]
+    stage   = r.get("clinical_stage", "").replace("_", " ")
+    ind     = r.get("indication", "").replace("_", " ")
+    cal     = r.get("calibration", [])
+    signals = r.get("signals", {})
+    bio     = r.get("biology", {})
+    tech    = r.get("technology", {})
+    ohint   = r.get("outcome_hint", "active")
+
+    conf_word = (
+        "strong confidence" if p >= 0.65 else
+        "moderate confidence" if p >= 0.50 else
+        "limited confidence" if p >= 0.35 else
+        "low confidence"
+    )
+    if ohint in ("approved", "acquired"):
+        outcome_note = f" The program has already achieved {ohint} status, validating the thesis."
+    elif "failed" in ohint:
+        phase = ohint[-1].upper()
+        outcome_note = f" Note: this program failed in Phase {phase}, providing a concrete negative signal."
+    else:
+        outcome_note = ""
+    s1 = f"The model scores this {stage} {ind} program at {p:.0%}, reflecting {conf_word}.{outcome_note}"
+
+    pos_cal = [c for c in cal if c["adjustment"].startswith("+")]
+    neg_cal = [c for c in cal if c["adjustment"].startswith("-")]
+    pos_sigs = signals.get("completion", [])
+    neg_sigs = signals.get("failure", [])
+
+    if pos_cal and not neg_cal:
+        s2 = f"Primary upside: {pos_cal[0]['factor'].lower()}."
+        if len(pos_cal) > 1:
+            s2 += f" Also supported by {pos_cal[1]['factor'].lower()}."
+    elif neg_cal and not pos_cal:
+        s2 = f"Primary downside: {neg_cal[0]['factor'].lower()} detected in source data."
+    elif pos_cal and neg_cal:
+        s2 = (f"Upside from {pos_cal[0]['factor'].lower()} is partially offset "
+              f"by {neg_cal[0]['factor'].lower()}.")
+    elif pos_sigs:
+        s2 = f"Positive outcome signals ({', '.join(pos_sigs[:2])}) detected in available data."
+    elif neg_sigs:
+        s2 = f"Negative signals ({', '.join(neg_sigs[:2])}) weigh against the program."
+    else:
+        s2 = "No strong confirming or disconfirming signals found in available source data."
+
+    tgt_status = bio.get("target_status", "")
+    tgt_list   = bio.get("detected_targets", [])
+    fit_rat    = (tech.get("fit_rationale") or "").strip()
+
+    if "validated" in tgt_status and tgt_list:
+        s3 = f"Target validation confirmed for {', '.join(tgt_list[:2])} — reduces biological risk."
+    elif tgt_list:
+        s3 = f"Target(s) identified ({', '.join(tgt_list[:2])}) but clinical validation is pending."
+    elif fit_rat:
+        s3 = fit_rat[:200]
+    else:
+        s3 = ""
+
+    return " ".join(x for x in [s1, s2, s3] if x)
+
+
+def _company_card(r: dict, fp: dict | None = None) -> str:
     p   = r["p_success"]
     col = _col(p)
     vrd = r["verdict"]
@@ -1169,58 +1240,289 @@ def _company_card(r: dict) -> str:
     elif "failed" in ohint:
         badge = f'<span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600">FAILED PH{ohint[-1].upper()}</span>'
 
+    # Decision tier
+    if p >= 0.70:
+        stmt = "Strong investment signal — proceed with full due diligence"
+        stmt_col = "#166534"; stmt_bg = "#f0fdf4"
+    elif p >= 0.55:
+        stmt = "Moderate signal — conditional GO, monitor next data readout"
+        stmt_col = "#065f46"; stmt_bg = "#ecfdf5"
+    elif p >= 0.45:
+        stmt = "Borderline — requires additional validation before committing"
+        stmt_col = "#92400e"; stmt_bg = "#fffbeb"
+    elif p >= 0.30:
+        stmt = "Weak signal — pass unless a major derisking event occurs"
+        stmt_col = "#991b1b"; stmt_bg = "#fff1f2"
+    else:
+        stmt = "High risk — NO-GO in current state"
+        stmt_col = "#7f1d1d"; stmt_bg = "#fef2f2"
+
+    narrative = _narrative(r)
+
+    # Decision drivers
+    cal = r.get("calibration", [])
+    driver_rows = []
+    for c in cal:
+        adj = c["adjustment"]
+        is_pos = adj.startswith("+")
+        bg2 = "#dcfce7" if is_pos else "#fee2e2"
+        fg2 = "#166534" if is_pos else "#991b1b"
+        icon = "&#9650;" if is_pos else "&#9660;"
+        driver_rows.append(
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'padding:4px 10px;background:{bg2};border-radius:4px;margin:2px 0;font-size:11px">'
+            f'<span style="color:{fg2}">{icon} {c["factor"]}</span>'
+            f'<span style="color:{fg2};font-weight:700;margin-left:10px">{adj}</span></div>'
+        )
+    drivers_html = (
+        "".join(driver_rows) if driver_rows
+        else '<div style="font-size:11px;color:#9ca3af;font-style:italic">No calibration adjustments applied — base model score only.</div>'
+    )
+
+    # Indication risk profile
+    ind_key   = r.get("indication", "other")
+    ind_label = ind_key.replace("_", " ").title()
+    risk_html = ""
+    if fp:
+        ind_data = (
+            fp.get("by_indication", {}).get(ind_key, {}).get("_total")
+            or fp.get("by_indication", {}).get("other", {}).get("_total", {})
+        )
+        if ind_data:
+            total_all = sum(ind_data.values()) or 1
+            _rc = {
+                "trial_design": "#f59e0b",
+                "efficacy":     "#f97316",
+                "safety":       "#ef4444",
+                "commercial":   "#6366f1",
+                "regulatory":   "#8b5cf6",
+                "covid":        "#6b7280",
+                "unknown":      "#d1d5db",
+            }
+            sorted_r = sorted(ind_data.items(), key=lambda x: -x[1])
+            bar_seg, legends = [], []
+            for key, count in sorted_r:
+                if count == 0:
+                    continue
+                color = _rc.get(key, "#9ca3af")
+                pct = count / total_all * 100
+                bar_seg.append(
+                    f'<div style="width:{pct:.1f}%;background:{color};height:100%" '
+                    f'title="{key}: {pct:.0f}%"></div>'
+                )
+                if key != "unknown":
+                    legends.append(
+                        f'<span style="color:{color};font-size:11px;font-weight:600">'
+                        f'{key.replace("_", " ")} {pct:.0f}%</span>'
+                    )
+            top_known = [(k, v) for k, v in sorted_r if k != "unknown"][:1]
+            dominant = top_known[0][0].replace("_", " ") if top_known else "unknown"
+            risk_html = (
+                '<div style="height:10px;background:#f3f4f6;border-radius:5px;'
+                'overflow:hidden;margin:5px 0 4px;display:flex">'
+                + "".join(bar_seg) + "</div>"
+                + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px">'
+                + "".join(legends) + "</div>"
+                + f'<div style="font-size:11px;color:#374151;margin:3px 0">'
+                  f'<b>Dominant failure mode in {ind_label}:</b> '
+                  f'<span style="font-weight:600">{dominant}</span> — '
+                  f'watch for this risk specifically.</div>'
+                + f'<div style="font-size:10px;color:#9ca3af">'
+                  f'Based on {total_all:,} historical {ind_label.lower()} program terminations tracked.</div>'
+            )
+
+    # Evidence & signals
+    signals   = r.get("signals", {})
+    bio       = r.get("biology", {})
+    pos_sigs  = signals.get("completion", [])
+    neg_sigs  = signals.get("failure", [])
+    saf_sigs  = signals.get("safety", [])
+    tgt_status = bio.get("target_status", "")
+    tgt_list   = bio.get("detected_targets", [])
+
+    ev_rows = []
+    if pos_sigs:
+        ev_rows.append(
+            f'<div style="font-size:11px;color:#16a34a;padding:3px 0">'
+            f'<b>&#10003; Positive signals:</b> {", ".join(pos_sigs[:6])}</div>'
+        )
+    if neg_sigs:
+        ev_rows.append(
+            f'<div style="font-size:11px;color:#dc2626;padding:3px 0">'
+            f'<b>&#10007; Failure signals:</b> {", ".join(neg_sigs[:6])}</div>'
+        )
+    if saf_sigs:
+        ev_rows.append(
+            f'<div style="font-size:11px;color:#ea580c;padding:3px 0">'
+            f'<b>&#9888; Safety signals:</b> {", ".join(saf_sigs[:4])}</div>'
+        )
+    if tgt_list:
+        tgt_col = "#16a34a" if "validated" in tgt_status else "#6b7280"
+        icon = "&#10003;" if "validated" in tgt_status else "&#9675;"
+        ev_rows.append(
+            f'<div style="font-size:11px;color:{tgt_col};padding:3px 0">'
+            f'<b>{icon} Molecular targets:</b> {", ".join(tgt_list[:5])}'
+            + (f' <em style="color:#9ca3af">({tgt_status})</em>' if tgt_status else '')
+            + "</div>"
+        )
+    if not ev_rows:
+        ev_rows.append('<div style="font-size:11px;color:#9ca3af;font-style:italic">No specific evidence signals extracted from source text.</div>')
+    evidence_html = "".join(ev_rows)
+
+    # Technology assessment
+    tech     = r.get("technology", {})
+    frontier = r.get("frontier", {})
+    platforms = tech.get("platform", [])
+    fit_rat   = (tech.get("fit_rationale") or "").strip()
+    is_bleed  = tech.get("is_bleeding_edge", False)
+    fit_score = tech.get("fit_score", 0)
+    in_use    = frontier.get("in_use", [])
+    not_using = frontier.get("not_using", [])
+
+    tech_rows = []
+    if platforms:
+        bleed_badge = (
+            ' &nbsp;<span style="background:#ede9fe;color:#5b21b6;padding:1px 6px;'
+            'border-radius:8px;font-size:10px;font-weight:600">Bleeding-edge</span>'
+            if is_bleed else ""
+        )
+        tech_rows.append(
+            f'<div style="font-size:11px;padding:2px 0"><b>Platform:</b> '
+            f'{", ".join(platforms[:4])}{bleed_badge}</div>'
+        )
+    fit_color = "#16a34a" if fit_score >= 0.7 else "#f59e0b" if fit_score >= 0.4 else "#ef4444"
+    tech_rows.append(
+        f'<div style="font-size:11px;padding:2px 0"><b>Tech&#8209;indication fit:</b> '
+        f'<span style="color:{fit_color};font-weight:700">{fit_score:.0%}</span>'
+        + (f' &mdash; {fit_rat[:180]}' if fit_rat else '') + "</div>"
+    )
+    for item in in_use[:4]:
+        tech_rows.append(
+            f'<div style="font-size:10px;color:#6366f1;padding:1px 0 1px 14px">'
+            f'&#9670; {item["tech"]} '
+            f'<span style="color:#9ca3af">({item.get("status","")})</span>'
+            + (f' &mdash; {item.get("note","")[:100]}' if item.get("note") else "")
+            + "</div>"
+        )
+    missing = [it["tech"] for it in not_using[:3]
+               if it.get("pursuit_level", "") in ("active", "emerging")]
+    if missing:
+        tech_rows.append(
+            f'<div style="font-size:10px;color:#9ca3af;padding:1px 0 1px 14px">'
+            f'&#9675; Not currently using: {", ".join(missing)}</div>'
+        )
+    tech_html = (
+        "".join(tech_rows) if tech_rows
+        else '<div style="font-size:11px;color:#9ca3af;font-style:italic">Technology profile not extracted.</div>'
+    )
+
+    # Safety
+    safety       = r.get("safety_profile", {})
+    safety_tier  = safety.get("overall_risk_tier", "low")
+    safety_warns = safety.get("key_warnings", [])
+    tier_col     = {"low": "#16a34a", "medium": "#f97316", "high": "#ef4444"}.get(safety_tier, "#6b7280")
+    safety_html  = (
+        f'<div style="font-size:11px;padding:2px 0"><b>Risk tier:</b> '
+        f'<span style="color:{tier_col};font-weight:700">{safety_tier.upper()}</span>'
+        + (f" &mdash; {'; '.join(safety_warns[:3])}" if safety_warns else
+           " &mdash; No specific warnings flagged in available data.")
+        + "</div>"
+    )
+
+    # Trial intelligence
     ct_n = r.get("ct_n", 0)
     ct_t = r.get("ct_terminated", 0)
     ct_r = r.get("ct_recruiting", 0)
-    ct_bar = ""
     if ct_n > 0:
         tw = int(ct_t / ct_n * 100)
         rw = int(ct_r / ct_n * 100)
-        ct_bar = (
-            f'<div style="margin:4px 0;font-size:11px">'
-            f'<b>Trials:</b> {ct_n} total &nbsp;·&nbsp; '
-            f'<span style="color:#ef4444">{ct_t} terminated</span> &nbsp;·&nbsp; '
-            f'<span style="color:#6366f1">{ct_r} recruiting</span></div>'
-            f'<div style="height:5px;background:#e5e7eb;border-radius:3px;overflow:hidden;margin:2px 0 6px">'
-            f'<div style="display:flex;height:100%">'
-            f'<div style="width:{tw}%;background:#ef4444"></div>'
-            f'<div style="width:{rw}%;background:#6366f1"></div>'
-            f'</div></div>'
+        health_pct = 1 - ct_t / ct_n
+        health_col = "#16a34a" if health_pct >= 0.7 else "#f59e0b" if health_pct >= 0.4 else "#ef4444"
+        trial_html = (
+            f'<div style="font-size:11px;padding:2px 0">'
+            f'<b>{ct_n}</b> trials registered &nbsp;&middot;&nbsp; '
+            f'<span style="color:#ef4444"><b>{ct_t}</b> terminated ({tw}%)</span>'
+            f' &nbsp;&middot;&nbsp; <span style="color:#6366f1"><b>{ct_r}</b> recruiting</span>'
+            f' &nbsp;&middot;&nbsp; <span style="color:{health_col}">trial health <b>{health_pct:.0%}</b></span></div>'
+            f'<div style="height:10px;background:#f3f4f6;border-radius:5px;overflow:hidden;'
+            f'margin:5px 0;display:flex">'
+            f'<div style="width:{tw}%;background:#ef4444;height:100%" title="terminated {tw}%"></div>'
+            f'<div style="width:{rw}%;background:#6366f1;height:100%" title="recruiting {rw}%"></div>'
+            f'<div style="flex:1;background:#d1fae5;height:100%" title="other"></div>'
+            f'</div>'
         )
+    else:
+        trial_html = '<div style="font-size:11px;color:#9ca3af;font-style:italic">No clinical trials found in registry for this program.</div>'
 
     note = r.get("note", "")
-    summary = r.get("summary", "")[:280]
+    note_div = (
+        '    <div style="font-size:11px;color:#374151;background:#f8fafc;border-radius:5px;'
+        'padding:8px 12px;margin-top:10px"><b>Note:</b> ' + note + '</div>\n'
+    )
+    ticker_span = (
+        '<span style="font-size:12px;color:#6b7280;font-weight:400"> (' + r['ticker'] + ')</span>'
+        if r.get('ticker') else ''
+    )
+    no_fp_div = '<div style="font-size:11px;color:#9ca3af;font-style:italic">No failure pattern data available.</div>'
+    sec  = _SEC_STYLE
 
-    return f"""
-  <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid {col};
-       border-radius:6px;padding:14px;margin:8px 0;box-shadow:0 1px 3px #0001">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-      <div style="flex:1;min-width:200px">
-        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em">
-          {r['firm']} · {r.get('category', '')}
-        </div>
-        <div style="font-size:15px;font-weight:700;margin:2px 0">
-          {r['name']}
-          {'<span style="font-size:11px;color:#6b7280;font-weight:400"> (' + r['ticker'] + ')</span>' if r.get('ticker') else ''}
-          {'&nbsp;' + badge if badge else ''}
-        </div>
-        <div style="font-size:11px;color:#374151;margin:2px 0">{r['drug']}</div>
-        <div style="font-size:10px;color:#6b7280">{r['mechanism'][:120]}</div>
-      </div>
-      <div style="text-align:right;min-width:80px">
-        <div style="font-size:26px;font-weight:bold;color:{col}">{p:.1%}</div>
-        <div style="background:{vbg};color:{vcl};border-radius:4px;padding:2px 8px;
-             font-weight:bold;font-size:12px;text-align:center">{vrd}</div>
-        <div style="font-size:10px;color:#9ca3af;margin-top:2px">
-          {r.get('clinical_stage','').replace('_',' ')}</div>
-      </div>
-    </div>
-    {ct_bar}
-    {('<div style="font-size:11px;color:#374151;margin:4px 0">' + note + '</div>') if note else ''}
-    {('<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;color:#6366f1">Model summary</summary>'
-       '<div style="font-size:11px;background:#f9fafb;padding:8px;border-radius:4px;margin-top:4px">'
-       + summary + '</div></details>') if summary else ''}
-  </div>"""
+    return (
+        f'\n  <div style="background:#fff;border:1px solid #e5e7eb;border-left:5px solid {col};'
+        f'border-radius:8px;padding:18px 20px;margin:12px 0;box-shadow:0 2px 8px #0001">\n'
+
+        # Header
+        f'    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">\n'
+        f'      <div style="flex:1;min-width:220px">\n'
+        f'        <div style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">'
+        f'{r["firm"]} &nbsp;&middot;&nbsp; {r.get("category","Biotech")} &nbsp;&middot;&nbsp; {ind_key.replace("_"," ")}</div>\n'
+        f'        <div style="font-size:17px;font-weight:800;color:#111827;line-height:1.2;margin:2px 0">'
+        + r['name'] + ticker_span + ('&nbsp;' + badge if badge else '') + '</div>\n'
+        f'        <div style="font-size:12px;color:#374151;font-weight:600;margin:4px 0">{r["drug"]}</div>\n'
+        f'        <div style="font-size:11px;color:#6b7280;line-height:1.5">{r["mechanism"][:180]}</div>\n'
+        f'      </div>\n'
+        f'      <div style="text-align:center;min-width:110px;background:{stmt_bg};border-radius:10px;padding:12px 16px">\n'
+        f'        <div style="font-size:34px;font-weight:900;color:{col};line-height:1">{p:.1%}</div>\n'
+        f'        <div style="background:{vbg};color:{vcl};border-radius:5px;padding:4px 12px;'
+        f'font-weight:800;font-size:14px;text-align:center;margin-top:6px">{vrd}</div>\n'
+        f'        <div style="font-size:10px;color:#9ca3af;margin-top:5px;text-transform:uppercase">'
+        f'{r.get("clinical_stage","").replace("_"," ")}</div>\n'
+        f'      </div>\n'
+        f'    </div>\n\n'
+
+        # Decision block
+        f'    <div style="background:{stmt_bg};border-left:4px solid {stmt_col};border-radius:5px;'
+        f'padding:10px 14px;margin:14px 0 8px">\n'
+        f'      <div style="font-size:13px;font-weight:800;color:{stmt_col};margin-bottom:6px">&rarr; {stmt}</div>\n'
+        f'      <div style="font-size:12px;color:#374151;line-height:1.7">{narrative}</div>\n'
+        f'    </div>\n\n'
+
+        # Drivers
+        f'    <div {sec}>Decision Drivers</div>\n'
+        f'    {drivers_html}\n\n'
+
+        # Risk profile
+        f'    <div {sec}>{ind_label} Historical Failure Profile</div>\n'
+        f'    {risk_html if risk_html else no_fp_div}\n\n'
+
+        # Evidence
+        f'    <div {sec}>Evidence &amp; Signals</div>\n'
+        f'    {evidence_html}\n\n'
+
+        # Technology
+        f'    <div {sec}>Technology Assessment</div>\n'
+        f'    {tech_html}\n\n'
+
+        # Safety
+        f'    <div {sec}>Safety Profile</div>\n'
+        f'    {safety_html}\n\n'
+
+        # Trials
+        f'    <div {sec}>Trial Intelligence</div>\n'
+        f'    {trial_html}\n'
+
+        + (note_div if note else "")
+        + '  </div>'
+    )
 
 
 def generate_report(
@@ -1229,8 +1531,17 @@ def generate_report(
     results: list[dict],
     db_stats: dict,
 ) -> str:
-    import datetime
+    import datetime, json as _json
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Load failure patterns if available
+    _fp_path = _ROOT / "data" / "failure_patterns.json"
+    fp: dict | None = None
+    if _fp_path.exists():
+        try:
+            fp = _json.loads(_fp_path.read_text())
+        except Exception:
+            fp = None
 
     # Stats
     n_total = len(results)
@@ -1252,7 +1563,7 @@ def generate_report(
     # Firm sections
     firm_sections = []
     for firm, cos in sorted(firms.items()):
-        cards = "".join(_company_card(c)
+        cards = "".join(_company_card(c, fp=fp)
                         for c in sorted(cos, key=lambda x: -x["p_success"]))
         avg = sum(c["p_success"] for c in cos) / len(cos)
         col = _col(avg)

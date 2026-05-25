@@ -22,13 +22,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("pipeline")
 
-DB_PATH = Path("data/bioventure.json")
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+DB_PATH = _ROOT / "data" / "bioventure.json"
 
 
 # ── Problem Statement ─────────────────────────────────────────────────────────
 
 def print_problem_statement() -> None:
-    ps = Path("PROBLEM_STATEMENT.md")
+    ps = _ROOT / "PROBLEM_STATEMENT.md"
     if ps.exists():
         print("\n" + "=" * 62)
         print("  PROBLEM STATEMENT")
@@ -83,11 +86,11 @@ def run_collect(max_per_source: int = 100) -> int:
         ("ClinicalTrials.gov",           ClinicalTrialsCollector()),
         ("VC Portfolio (30 firms)",      VCPortfolioCollector()),
         ("VC decision history",          VCDecisionTracker()),
-        ("VC websites + slides",          VCWebsiteCollector(base_slides_dir=Path("data/slides"))),
+        ("VC websites + slides",          VCWebsiteCollector(base_slides_dir=_ROOT / "data" / "slides")),
         ("SEC EDGAR filings",            SECEdgarCollector()),
         ("PubMed clinical outcomes",     VCScraper()),
         ("GlobeNewsWire press releases", SlideExtractor()),
-        ("EDGAR slide downloads",        SlideDownloader(slides_dir=Path("data/slides/edgar"))),
+        ("EDGAR slide downloads",        SlideDownloader(slides_dir=_ROOT / "data" / "slides" / "edgar")),
     ]
 
     for name, collector in collectors:

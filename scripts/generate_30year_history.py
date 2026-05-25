@@ -21,7 +21,11 @@ Run once:
 from __future__ import annotations
 
 import random
+import sys
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 
 from src.collectors.base_collector import RawRecord
 from src.storage.repository import bulk_upsert, count
@@ -31,7 +35,7 @@ SEED             = 19960417
 PROGRAMS_PER_YEAR = 60           # × 29 cohort years = 1 740 programs
 START_YEARS      = range(1996, 2025)
 CURRENT_YEAR     = 2026
-DB_PATH          = Path("data/bioventure.json")
+DB_PATH          = _ROOT / "data" / "bioventure.json"
 SOURCE_NAME      = "hist30_cohort"
 
 random.seed(SEED)

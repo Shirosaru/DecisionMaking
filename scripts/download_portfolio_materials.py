@@ -24,11 +24,13 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
+_ROOT = Path(__file__).resolve().parent.parent
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
 # ─────────────────────────────────────────────────────────────────────────────
-OUTDIR   = Path("data/slides/portfolio")
-REPORT   = Path("data/portfolio_materials_report.html")
+OUTDIR   = _ROOT / "data" / "slides" / "portfolio"
+REPORT   = _ROOT / "data" / "reports" / "portfolio_materials_report.html"
 RATE     = 0.5          # seconds between HTTP requests
 MAX_SIZE = 8_000_000    # skip files > 8 MB
 MAX_GNW  = 12           # GlobeNewsWire articles per company

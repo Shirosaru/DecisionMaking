@@ -12,7 +12,11 @@ Run once to populate data/bioventure.json before running the full pipeline.
 from __future__ import annotations
 
 import random
+import sys
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 
 from src.collectors.base_collector import RawRecord
 from src.storage.repository import bulk_upsert, count
@@ -20,7 +24,7 @@ from src.storage.repository import bulk_upsert, count
 SEED = 42
 random.seed(SEED)
 
-DB_PATH = Path("data/bioventure.json")
+DB_PATH = _ROOT / "data" / "bioventure.json"
 
 # ── Domain vocabularies ───────────────────────────────────────────────────────
 

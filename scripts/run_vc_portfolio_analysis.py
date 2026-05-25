@@ -23,7 +23,8 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_ROOT = Path(__file__).resolve().parent.parent
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1.  PORTFOLIO  (pre-scraped from the 6 VC URLs)
@@ -534,7 +535,7 @@ def _is_validated(target: str) -> bool:
 # 4.  BIOVENTURE.JSON  PATTERN  MATCH
 # ─────────────────────────────────────────────────────────────────────────────
 print("Loading bioventure.json …", flush=True)
-_bv_data = json.loads(Path("data/bioventure.json").read_text())
+_bv_data = json.loads((_ROOT / "data" / "bioventure.json").read_text())
 _bv_projects = list(_bv_data.get("projects", {}).values())
 
 def _bv_comparable(indication: str, stage: str, n: int = 5) -> list[dict]:
@@ -1179,7 +1180,7 @@ document.querySelectorAll('.company-card').forEach(function(card) {{
 </body>
 </html>"""
 
-out = Path("data/vc_portfolio_failure_report.html")
+out = _ROOT / "data" / "reports" / "vc_portfolio_failure_report.html"
 out.write_text(HTML)
 print(f"\nReport written → {out.resolve()}")
 print(f"Open in browser:  file://{out.resolve()}")
