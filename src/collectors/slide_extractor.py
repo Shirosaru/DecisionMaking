@@ -30,7 +30,11 @@ _SEARCH_QUERIES: list[tuple[str, str, str]] = [
     ("phase 3 NDA approved FDA biotech",       "phase3",      "go"),
     ("first-in-human phase 1 oncology",        "preclinical", "go"),
     ("biotech pipeline advance phase 2",       "phase2",      "go"),
-    ("drugs-patents-the-last-14days",          "unknown",     "go"),
+    ("drugpatents-in-last-14days antibody patents", "unknown", "go"),
+    ("biotech patented drug discovery",        "unknown",     "go"),
+    ("antibody patents biotech company",       "unknown",     "go"),
+    ("patent granted biotechnology therapeutics", "unknown",   "go"),
+    ("novel patent pharmaceutical company",    "unknown",     "go"),
 ]
 
 _STAGE_RE = re.compile(
@@ -44,6 +48,10 @@ _STAGE_MAP = {
 }
 _DECISION_RE = re.compile(
     r"\b(discontinu|terminat|halted|failed|no.go|advance|initiat|enroll|positive|approved|NDA|BLA)\b",
+    re.IGNORECASE,
+)
+_PATENT_RE = re.compile(
+    r"\bpatents?\b|\buspto\b|\bintellectual property\b|\bwo\d{4}\b",
     re.IGNORECASE,
 )
 _INVEST_RE = re.compile(r"\$\s*(\d[\d,.]*)\s*(million|M|billion|B)\b", re.IGNORECASE)
@@ -66,6 +74,37 @@ _MECHANISM_RE = re.compile(
     r"gene therapy|CRISPR|AAV|"
     r"RNA|siRNA|mRNA|antisense|"
     r"enzyme|protein|peptide|vaccine)\b",
+    re.IGNORECASE,
+)
+
+_COMPANY_RE = re.compile(
+    r"\b([A-Z][A-Za-z0-9&'.,-]*(?:\s+[A-Z][A-Za-z0-9&'.,-]*){0,6}\s+"
+    r"(?:Inc\.?|Incorporated|Ltd\.?|Limited|Corp\.?|Corporation|plc|AG|N\.V\.|NV|S\.A\.|SA|"
+    r"Therapeutics|Pharmaceuticals|Pharma|Biosciences|Biotechnology|Biotech|Bio|Medical|Health))\b"
+)
+
+_LEADING_COMPANY_NOISE = {
+    "A", "An", "And", "On", "For", "To", "Of", "The",
+    "Now", "Brings", "Bring", "Positive", "Novel", "Announces", "Announce",
+    "Agreement", "Acquire", "Acquires", "Acquisition", "Portfolio", "Company",
+}
+
+_COMPANY_BLACKLIST = {
+    "skip topnav biotech",
+    "skip topnav biotechnology",
+    "nature biotechnology",
+    "biotech",
+}
+
+_LEGAL_SUFFIXES = {
+    "inc", "incorporated", "ltd", "limited", "corp", "corporation",
+    "plc", "ag", "nv", "sa",
+    "therapeutics", "pharmaceuticals", "pharma", "biosciences",
+    "biotechnology", "biotech", "bio", "medical", "health",
+}
+
+_EXCLUDE_TITLE_RE = re.compile(
+    r"global markets report|market report published|research and markets|grand view research",
     re.IGNORECASE,
 )
 
@@ -117,6 +156,43 @@ def _extract_investment(text: str) -> float:
     return amount * mult
 
 
+def _extract_company(text: str, title: str) -> str:
+    """Best-effort company extraction from title/body for downstream tracking."""
+    for candidate in (title, text[:1200]):
+        m = _COMPANY_RE.search(candidate)
+        if m:
+            tokens = m.group(1).replace(",", " ").split()
+            while tokens and tokens[0].strip(". ") in _LEADING_COMPANY_NOISE:
+                tokens = tokens[1:]
+            cleaned = " ".join(tokens).strip(" ,. ")
+            cleaned = re.sub(r"\s+", " ", cleaned)
+            cleaned = re.sub(r"^Skip TopNav\s+", "", cleaned, flags=re.IGNORECASE)
+
+            # Remove headline duplication like "Foo Bio Inc. Foo Bio Inc".
+            dup = re.match(r"^(?P<x>.+?)\s+(?P=x)$", cleaned, flags=re.IGNORECASE)
+            if dup:
+                cleaned = dup.group("x").strip(" ,. ")
+
+            words = cleaned.split()
+            if len(words) >= 4 and len(words) % 2 == 0:
+                mid = len(words) // 2
+                left = [w.lower().strip(".,") for w in words[:mid]]
+                right = [w.lower().strip(".,") for w in words[mid:]]
+                if left == right:
+                    cleaned = " ".join(words[:mid]).strip(" ,. ")
+                    words = cleaned.split()
+
+            # Keep only up to first legal/company suffix to avoid trailing noise.
+            for i, w in enumerate(words):
+                if w.lower().strip(".,") in _LEGAL_SUFFIXES:
+                    cleaned = " ".join(words[: i + 1]).strip(" ,. ")
+                    break
+
+            if cleaned and cleaned.lower() not in _COMPANY_BLACKLIST:
+                return cleaned
+    return "unknown"
+
+
 class SlideExtractor(BaseCollector):
     """
     Extracts bioventure decision records from GlobeNewsWire biotechnology
@@ -128,13 +204,18 @@ class SlideExtractor(BaseCollector):
 
     def collect(self, max_records: int = 100) -> list[RawRecord]:
         records: list[RawRecord] = []
+        seen_urls: set[str] = set()
         per_query = max(max_records // len(_SEARCH_QUERIES), 3)
 
         for q_text, hint_stage, hint_decision in _SEARCH_QUERIES:
             if len(records) >= max_records:
                 break
             batch = self._run_query(q_text, hint_stage, hint_decision, per_query)
-            records.extend(batch)
+            for rec in batch:
+                if rec.url in seen_urls:
+                    continue
+                seen_urls.add(rec.url)
+                records.append(rec)
             logger.info(
                 "[GNW] query=%r stage=%s decision=%s -> %d records",
                 q_text[:40], hint_stage, hint_decision, len(batch),
@@ -186,13 +267,17 @@ class SlideExtractor(BaseCollector):
         # Get title
         h1 = soup.find("h1")
         title = h1.get_text(strip=True) if h1 else href.rstrip("/").split("/")[-1][:100]
+        if _EXCLUDE_TITLE_RE.search(title):
+            return None
 
         # Get article body text
         for tag in soup(["script", "style", "nav", "header", "footer"]):
             tag.decompose()
         text = soup.get_text(separator=" ", strip=True)[:5000]
 
-        if not _DECISION_RE.search(text):
+        has_decision_signal = bool(_DECISION_RE.search(text))
+        has_patent_signal = bool(_PATENT_RE.search(text))
+        if not (has_decision_signal or has_patent_signal):
             return None   # not a relevant press release
 
         stage     = _extract_stage(text, hint_stage)
@@ -201,6 +286,7 @@ class SlideExtractor(BaseCollector):
         indication= _extract_indication(text)
         mechanism = _extract_mechanism(text)
         investment= _extract_investment(text)
+        company   = _extract_company(text, title)
         source_id = re.sub(r"\W+", "_", href.strip("/").split("/")[-1])[:80]
 
         return RawRecord(
@@ -215,5 +301,9 @@ class SlideExtractor(BaseCollector):
             outcome=outcome,
             investment_usd=investment,
             raw_text=text[:3000],
-            extra={"gnw_href": href},
+            extra={
+                "gnw_href": href,
+                "company_guess": company,
+                "patent_signal": has_patent_signal,
+            },
         )
