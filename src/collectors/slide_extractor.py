@@ -30,6 +30,7 @@ _SEARCH_QUERIES: list[tuple[str, str, str]] = [
     ("phase 3 NDA approved FDA biotech",       "phase3",      "go"),
     ("first-in-human phase 1 oncology",        "preclinical", "go"),
     ("biotech pipeline advance phase 2",       "phase2",      "go"),
+    ("drugs-patents-the-last-14days",          "unknown",     "go"),
 ]
 
 _STAGE_RE = re.compile(

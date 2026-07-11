@@ -79,6 +79,99 @@ class ClinicalTrialsCollector(BaseCollector):
         "metabolic OR diabetes OR obesity OR NASH OR fatty liver",
         "infectious disease OR HIV OR hepatitis OR antiviral OR antibacterial",
         "gene therapy OR cell therapy OR CAR-T OR CRISPR OR mRNA",
+        # ── Masking / conditional activation (Probody, tumor-protease, ISAC) ──
+        "probody OR masked antibody OR conditionally active OR tumor-activated OR"
+        " protease-cleavable OR zipalertinib OR CX-2009 OR CX-2029 OR CX-072 OR CX-904",
+        # ── Radioligand therapy / radiopharmaceuticals ──
+        "radioligand therapy OR radiopharmaceutical OR lutetium-177 OR actinium-225 OR"
+        " PSMA radioligand OR DOTATATE OR DOTATOC OR radioconjugate OR targeted alpha therapy"
+        " OR Pluvicto OR FPI-2265 OR PNT2002",
+        # ── Antibody-drug conjugates (comprehensive) ──
+        "antibody-drug conjugate OR ADC oncology OR TROP-2 ADC OR HER2 ADC OR"
+        " nectin-4 ADC OR claudin ADC OR DXd OR sacituzumab OR enfortumab OR"
+        " trastuzumab deruxtecan OR mirvetuximab OR ifinatamab",
+        # ── Bispecific antibodies / T-cell engagers ──
+        "bispecific antibody oncology OR T-cell engager OR TCE oncology OR"
+        " PSMA-CD3 OR EpCAM-CD3 OR DLL3-CD3 OR FLT3-CD3 OR MAGE-A4 OR EGFR-CD3 OR"
+        " tarlatamab OR blinatumomab OR mosunetuzumab OR glofitamab",
+        # ── KRAS and RAS-pathway selective inhibitors ──
+        "KRAS G12C OR KRAS G12D OR KRAS G12V OR sotorasib OR adagrasib OR"
+        " MRTX1133 OR RMC-6236 OR SOS1 inhibitor OR SHP2 inhibitor OR"
+        " KRASG12C OR pan-KRAS OR RAS-MAPK oncology",
+        # ── Synthetic lethality / DNA damage response (DDR) oncology ──
+        "synthetic lethality oncology OR PARP inhibitor cancer OR ATR inhibitor OR"
+        " ATM inhibitor OR WEE1 inhibitor OR adavosertib OR ceralasertib OR"
+        " AZD6738 OR elimusertib OR camonsertib OR talazoparib OR niraparib",
+        # ── mRNA cancer vaccines / personalized neoantigen vaccines ──
+        "mRNA cancer vaccine OR neoantigen vaccine OR personalized cancer vaccine OR"
+        " tumor neoantigen OR mRNA-4157 OR BNT111 OR BNT112 OR BNT113 OR V940 OR"
+        " autogene cevumeran OR MAGE-A3 vaccine OR KRAS vaccine",
+        # ── Oncolytic viruses / STING agonists / innate immune oncology ──
+        "oncolytic virus OR STING agonist oncology OR cGAS-STING cancer OR"
+        " innate immune oncology OR oncolytic virotherapy OR T-VEC OR"
+        " ADU-S100 OR MK-1454 OR diABZI OR SB11285 OR SNX281",
+        # ── Targeted protein degradation (PROTAC / molecular glue) in oncology ──
+        "PROTAC oncology OR molecular glue cancer OR targeted protein degradation cancer OR"
+        " ARV-471 OR ARV-766 OR AC682 OR CC-92480 OR mezigdomide OR CFT8634 OR"
+        " BRD4 degrader OR androgen receptor degrader OR ER degrader PROTAC",
+        # ── Tumor microenvironment: adenosine, CD47/SIRPa, TGF-beta ──
+        "CD47 SIRPalpha cancer OR adenosine pathway cancer OR CD73 inhibitor OR"
+        " A2AR antagonist oncology OR magrolimab OR evorpacept OR TGF-beta cancer OR"
+        " bintrafusp OR M7824 OR LY3200882",
+        # ── Next-gen checkpoint: TIGIT, LAG-3, TIM-3 ──
+        "TIGIT inhibitor OR tiragolumab OR vibostolimab OR domvanalimab OR"
+        " LAG-3 inhibitor cancer OR relatlimab OR ieramilimab OR"
+        " TIM-3 inhibitor OR cobolimab OR sabatolimab OR LY3321367",
+        # ── MMP-regulated / tumor-protease-activated therapeutics ──
+        # Matrix metalloproteinase (MMP-2, MMP-9, MMP-14/MT1-MMP, MMP-7) cleavage
+        # sequences are overexpressed in solid tumors; drugs use them as switches
+        "MMP-cleavable OR MMP-activatable OR matrix metalloproteinase prodrug OR"
+        " protease-activated prodrug OR tumor protease OR MT1-MMP OR MMP-14 OR"
+        " GPLGIAGQ OR PLGLAG OR gelatinase-activated OR MMP-responsive nanoparticle",
+        # ── Conditionally active biologics / masked cytokines / pro-cytokines ──
+        # Xilio (Pfizer), masked IL-2, masked IL-12, masked IL-18, masked IFN-gamma
+        "masked cytokine OR conditional IL-2 OR pro-cytokine tumor OR"
+        " masked interleukin prodrug OR XTX101 OR XTX301 OR XTX202 OR masked IL-12 OR"
+        " masked IFN OR masked IL-18 OR WTX-124 OR WTX-330 OR NKTR-358 OR MDNA11",
+        # ── Protein nanocages / VLPs / capsid-based drug delivery ──
+        # PDB-derived structures: ferritin (1FHA), vault (2ZUO), P22 capsid,
+        # Hsp16.5, lumazine synthase (I53-50), E2 pyruvate dehydrogenase
+        "protein nanocage cancer OR ferritin nanoparticle drug delivery OR"
+        " virus-like particle oncology OR VLP cancer therapy OR"
+        " vault nanoparticle tumor OR bacteriophage capsid drug OR"
+        " self-assembling protein nanoparticle cancer OR Hsp cage drug delivery OR"
+        " computationally designed nanoparticle cancer",
+        # ── Bicycle peptides / cyclic peptide-toxin conjugates (tumor protease) ──
+        # Bicycle Therapeutics BTCs — bicyclic peptides, MMP/uPA-activated
+        "bicyclic peptide cancer OR bicycle toxin conjugate OR BTC oncology OR"
+        " BT-8009 OR BT-001 OR BT-6030 OR Bicycle Therapeutics OR"
+        " cyclic peptide drug conjugate OR peptide-drug conjugate tumor",
+        # ── Logic-gated / Boolean-sensing cell therapy and gene therapy ──
+        # A2 Biotherapeutics Tmod, SynNotch logic gates, LINK platform
+        "logic-gated CAR-T OR Tmod cell therapy OR SynNotch oncology OR"
+        " Boolean cell therapy OR NOT-gate CAR OR antigen-sensing CAR OR"
+        " A2 Biotherapeutics OR tumor-versus-normal discrimination cell therapy",
+        # ── Tumor-penetrating peptides / iRGD / CendR pathway ──
+        # iRGD (CRGDKGPDC) is cleaved by MMP/uPA exposing the CendR motif
+        # (RXXXR) which activates neuropilin-1-mediated tumor penetration
+        "tumor penetrating peptide OR iRGD cancer OR CendR pathway OR"
+        " neuropilin-1 drug delivery OR CEND-1 OR tumor homing peptide OR"
+        " NGR peptide drug OR RGD conjugate oncology OR CRGD nanoparticle",
+        # ── DNA / RNA origami and structural nucleic acid nanostructures ──
+        "DNA origami drug delivery OR RNA origami cancer OR nucleic acid nanostructure"
+        " tumor OR DNA tetrahedron drug carrier OR DNA nanocage cancer therapy OR"
+        " structural DNA nanotechnology oncology",
+        # ── Academic structural biology translation: computationally designed proteins ──
+        # David Baker lab (I53-50, I3-01, etc.), Rosetta design, AlphaFold-guided
+        "computationally designed protein cancer OR de novo protein design oncology OR"
+        " Rosetta drug design cancer OR AlphaFold drug target OR"
+        " designed ankyrin repeat protein cancer OR DARPin oncology OR"
+        " affibody cancer OR monobody cancer OR alphaBody",
+        # ── Anellovirus / non-integrating capsid gene therapy ──
+        # Ring Therapeutics, Flagship Pioneering platforms
+        "anellovirus gene therapy OR AAV capsid engineering cancer OR"
+        " Ring Therapeutics OR engineered capsid oncology OR capsid-based delivery tumor OR"
+        " non-viral capsid cancer therapy",
     ]
     _PER_DISEASE_QUERY = 300
 
