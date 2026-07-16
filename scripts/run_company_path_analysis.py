@@ -24,6 +24,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 
 from src.learning.decision_model import SuccessPredictor
+from src.processors.feature_extractor import characterize
 from src.storage.repository import fetch_all
 
 DB_PATH = _ROOT / "data" / "bioventure.json"
@@ -151,6 +152,103 @@ def dominant(items: list[str], fallback: str = "unknown") -> str:
     return Counter(items).most_common(1)[0][0]
 
 
+_ADVANCED_STAGES = ("phase1", "phase2", "phase3", "nda_submitted", "approved")
+
+
+def _path_entry(row: dict[str, Any]) -> dict[str, Any]:
+    extra = row.get("extra") or {}
+    reason = extra.get("why_stopped") or ""
+    return {
+        "title": row.get("title", ""),
+        "stage": row.get("clinical_stage", "unknown"),
+        "outcome": row.get("outcome", "unknown"),
+        "decision": row.get("decision", "undecided"),
+        "reason": reason,
+        "date": row_date_key(row),
+    }
+
+
+def build_elimination_analysis(company: str, records: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Process-of-elimination view: what this company has already ruled out
+    (killed programs / known failure modes not present) versus what remains
+    an active risk flag in their current record.
+    """
+    eliminated_paths = [
+        _path_entry(r) for r in records
+        if r.get("decision") == "no-go" or "discontinued" in (r.get("outcome") or "")
+    ]
+    pursued_paths = [
+        _path_entry(r) for r in records
+        if r.get("decision") in ("go", "acquired") or (r.get("outcome") or "") in ("approved", "ongoing")
+    ]
+
+    combined_text = " ".join(
+        f"{r.get('title','')} {r.get('raw_text','')}" for r in records
+    )[:20000]
+    indication = dominant([r.get("indication") or "unknown" for r in records])
+    mechanism = dominant([r.get("mechanism") or "unknown" for r in records])
+
+    char = characterize({
+        "indication": indication,
+        "mechanism": mechanism,
+        "title": f"{company} combined history",
+        "raw_text": combined_text,
+    })
+
+    tech_fit = char["tech_fit"]
+    safety = char["safety_profile"]
+    signals = char["signals"]
+
+    # Catalog of common pharma "not-do" failure modes. Each is either
+    # ruled out (eliminated / favorable) or still an active risk flag.
+    risk_catalog = [
+        {
+            "label": "Unvalidated molecular target",
+            "active": char["target_status"] == "unvalidated",
+            "detail": "Target lacks any approved precedent drug — biology unproven.",
+        },
+        {
+            "label": "Efficacy failure signal in record text",
+            "active": bool(signals.get("failure")),
+            "detail": "Text mentions missed endpoints, futility, or lack of benefit.",
+        },
+        {
+            "label": "Safety / toxicity signal in record text",
+            "active": bool(signals.get("safety")),
+            "detail": "Text mentions adverse events, dose-limiting toxicity, or black-box risk.",
+        },
+        {
+            "label": "Bleeding-edge tech mismatched to indication",
+            "active": char["is_bleeding_edge"] and not tech_fit["is_clearcut"] and tech_fit["score"] < 0.35,
+            "detail": "Novel platform applied where fit to indication is weak.",
+        },
+        {
+            "label": "High modality-inherent safety tier",
+            "active": safety.get("overall_risk_tier") in ("high", "moderate-high"),
+            "detail": f"Overall modality risk tier: {safety.get('overall_risk_tier', 'unknown')}.",
+        },
+        {
+            "label": "No positive momentum signal anywhere in history",
+            "active": not signals.get("completion") and not pursued_paths,
+            "detail": "No completion/positive text signals and no ongoing/approved/acquired programs.",
+        },
+    ]
+
+    active_flags = [c for c in risk_catalog if c["active"]]
+    eliminated_flags = [c for c in risk_catalog if not c["active"]]
+
+    return {
+        "eliminated_paths": eliminated_paths,
+        "pursued_paths": pursued_paths,
+        "risk_catalog": risk_catalog,
+        "active_flags": active_flags,
+        "eliminated_flags": eliminated_flags,
+        "tech_fit": tech_fit,
+        "target_status": char["target_status"],
+    }
+
+
 def summarize_path(
     company: str,
     records: list[dict[str, Any]],
@@ -167,9 +265,9 @@ def summarize_path(
     path_parts: list[str] = []
     if patent_hits:
         path_parts.append("IP/patent-led")
-    if any(stages.get(s, 0) for s in ("phase1", "phase2", "phase3", "nda_submitted", "approved")):
+    if any(stages.get(s, 0) for s in _ADVANCED_STAGES):
         path_parts.append("clinical-development")
-    if stages.get("preclinical", 0) and not any(stages.get(s, 0) for s in ("phase1", "phase2", "phase3", "nda_submitted", "approved")):
+    if stages.get("preclinical", 0) and not any(stages.get(s, 0) for s in _ADVANCED_STAGES):
         path_parts.append("preclinical-discovery")
     if decisions.get("acquired", 0):
         path_parts.append("partnering/M&A")
@@ -194,27 +292,24 @@ def summarize_path(
     }
     model_result = model.explain(model_row)
 
-    # Simpler history-based decision that mirrors the user's request.
-    score = 0
-    if decisions.get("acquired", 0):
-        score += 1
-    if outcomes.get("approved", 0) or outcomes.get("ongoing", 0):
-        score += 3
-    if stages.get("nda_submitted", 0) or stages.get("phase3", 0):
-        score += 2
-    if stages.get("phase2", 0):
-        score += 1
-    if stages.get("preclinical", 0) and not any(stages.get(s, 0) for s in ("phase1", "phase2", "phase3", "nda_submitted", "approved")):
-        score -= 1
-    if decisions.get("no-go", 0) > decisions.get("go", 0):
-        score -= 2
-    if patent_hits and not any(stages.get(s, 0) for s in ("phase1", "phase2", "phase3", "nda_submitted", "approved")):
-        score -= 1
+    elimination = build_elimination_analysis(company, records)
+    n_active = len(elimination["active_flags"])
+    n_eliminated = len(elimination["eliminated_flags"])
+    has_forward_momentum = bool(elimination["pursued_paths"])
 
-    verdict = "GO" if score >= 1 else "NO-GO"
-    if model_result["verdict"] != verdict:
-        # Prefer the model if it sees a stronger signal.
-        verdict = model_result["verdict"] if abs(model_result["p_success"] - 0.5) >= 0.1 else verdict
+    # Decision by process of elimination: rule out known failure modes first.
+    # GO only if more failure modes have been eliminated than remain active,
+    # and there is at least one forward-moving (go/ongoing/approved) path.
+    verdict = "GO" if (n_eliminated > n_active and has_forward_momentum) else "NO-GO"
+    if model_result["verdict"] != verdict and abs(model_result["p_success"] - 0.5) >= 0.2:
+        # Only let the model override on a strong signal; elimination logic is primary.
+        verdict = model_result["verdict"]
+
+    decision_rationale = (
+        f"Eliminated {n_eliminated}/{len(elimination['risk_catalog'])} known failure modes; "
+        f"{n_active} remain active. "
+        + ("Forward-moving programs present." if has_forward_momentum else "No forward-moving programs found.")
+    )
 
     return {
         "company": company,
@@ -223,6 +318,7 @@ def summarize_path(
         "path": ", ".join(path_parts) if path_parts else "unclear / mixed",
         "summary": history_text,
         "verdict": verdict,
+        "decision_rationale": decision_rationale,
         "p_success": model_result["p_success"],
         "model_verdict": model_result["verdict"],
         "model_summary": model_result["summary"],
@@ -231,6 +327,10 @@ def summarize_path(
         "top_mechanism": latest_mechanism,
         "records": records,
         "model_result": model_result,
+        "eliminated_paths": elimination["eliminated_paths"],
+        "pursued_paths": elimination["pursued_paths"],
+        "active_flags": elimination["active_flags"],
+        "eliminated_flags": elimination["eliminated_flags"],
     }
 
 
@@ -246,7 +346,7 @@ def load_latest_patent_companies(rows: list[dict[str, Any]], limit: int = 10) ->
         if _REPORT_TITLE_RE.search(str(row.get("title", ""))):
             continue
         company = canonical_company_name(str(extra.get("company_guess", "")))
-        if not company:
+        if not company or company.strip().lower() == "unknown":
             continue
         if not company_tokens(company):
             continue
@@ -269,6 +369,30 @@ def render_record_line(row: dict[str, Any]) -> str:
     return f"- {date} | {source} | {stage} | {decision} | {title}"
 
 
+def render_flag_list(flags: list[dict[str, Any]], eliminated: bool) -> str:
+    if not flags:
+        return f"<li class='muted'>None {'ruled out' if eliminated else 'active'}.</li>"
+    icon = "\u2713" if eliminated else "\u26a0"
+    return "".join(
+        f"<li><span class='flag-icon'>{icon}</span> <strong>{f['label']}</strong>"
+        f"<div class='flag-detail'>{f['detail']}</div></li>"
+        for f in flags
+    )
+
+
+def render_path_list(paths: list[dict[str, Any]]) -> str:
+    if not paths:
+        return "<li class='muted'>None on record.</li>"
+    items = []
+    for p in paths[-6:]:
+        reason = f" — {p['reason']}" if p.get("reason") else ""
+        items.append(
+            f"<li>{p['date']} | {p['stage']} | {p['outcome']}{reason}"
+            f"<div class='flag-detail'>{p['title']}</div></li>"
+        )
+    return "".join(items)
+
+
 def render_html_report(results: list[dict[str, Any]]) -> str:
         cards: list[str] = []
         for item in results:
@@ -284,6 +408,10 @@ def render_html_report(results: list[dict[str, Any]]) -> str:
                 rows_html = "".join(
                         f"<li><span>{render_record_line(row)}</span></li>" for row in item["records"][-5:]
                 )
+                eliminated_html = render_flag_list(item.get("eliminated_flags", []), eliminated=True)
+                active_html = render_flag_list(item.get("active_flags", []), eliminated=False)
+                eliminated_paths_html = render_path_list(item.get("eliminated_paths", []))
+                pursued_paths_html = render_path_list(item.get("pursued_paths", []))
                 cards.append(f"""
                 <section class="card">
                     <div class="card-head">
@@ -301,7 +429,28 @@ def render_html_report(results: list[dict[str, Any]]) -> str:
                         <span>Top indication: {item['top_indication']}</span>
                         <span>Top mechanism: {item['top_mechanism']}</span>
                     </div>
+                    <p class="rationale">{item.get('decision_rationale', '')}</p>
                     <p class="summary">{item['summary']}</p>
+                    <div class="detail-grid">
+                        <div class="sub-box">
+                            <h3>\u2713 Eliminated / ruled-out risk flags</h3>
+                            <ul class="flags eliminated">{eliminated_html}</ul>
+                        </div>
+                        <div class="sub-box">
+                            <h3>\u26a0 Active risk flags</h3>
+                            <ul class="flags active">{active_html}</ul>
+                        </div>
+                    </div>
+                    <div class="detail-grid">
+                        <div class="sub-box">
+                            <h3>Not-do paths already eliminated by this company</h3>
+                            <ul class="paths">{eliminated_paths_html}</ul>
+                        </div>
+                        <div class="sub-box">
+                            <h3>Paths still being pursued</h3>
+                            <ul class="paths">{pursued_paths_html}</ul>
+                        </div>
+                    </div>
                     <div class="history">
                         <h3>Recent history</h3>
                         <ul>{rows_html}</ul>
@@ -342,6 +491,19 @@ def render_html_report(results: list[dict[str, Any]]) -> str:
     .history h3 {{ margin:0 0 10px; font-size:15px; color:#d8e7f6; }}
     .history ul {{ margin:0; padding-left:18px; color:var(--muted); line-height:1.65; }}
     .empty p {{ color:var(--muted); }}
+    .rationale {{ margin:0 0 14px; color:#a6f0ff; font-weight:600; font-size:14px; }}
+    .detail-grid {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }}
+    .sub-box {{ background:rgba(255,255,255,.03); border:1px solid var(--line); border-radius:14px; padding:14px; }}
+    .sub-box h3 {{ margin:0 0 10px; font-size:14px; color:#d8e7f6; }}
+    .flags, .paths {{ margin:0; padding-left:0; list-style:none; color:var(--muted); line-height:1.5; }}
+    .flags li, .paths li {{ margin-bottom:10px; padding-bottom:8px; border-bottom:1px dashed rgba(255,255,255,.06); }}
+    .flags li:last-child, .paths li:last-child {{ border-bottom:none; }}
+    .flag-icon {{ display:inline-block; width:16px; }}
+    .flags.eliminated .flag-icon {{ color:var(--go); }}
+    .flags.active .flag-icon {{ color:var(--nogo); }}
+    .flag-detail {{ font-size:12px; color:var(--muted); margin-top:2px; }}
+    .muted {{ color:var(--muted); }}
+    @media (max-width:720px) {{ .detail-grid {{ grid-template-columns:1fr; }} }}
 </style>
 </head>
 <body><main>
@@ -357,7 +519,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze company discovery paths from the bioventure history.")
     parser.add_argument("companies", nargs="*", help="Company names to analyze")
     parser.add_argument("--latest-patents", action="store_true", help="Use the latest patent-related companies from bioventure")
-    parser.add_argument("--limit", type=int, default=10, help="Limit when using --latest-patents")
+    parser.add_argument("--limit", type=int, default=15, help="Limit when using --latest-patents")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Path to bioventure database JSON")
     parser.add_argument("--report", type=Path, default=REPORT_PATH, help="Write a text report to this path")
     args = parser.parse_args()
@@ -391,12 +553,17 @@ def main() -> int:
                 "company_clean": canonical_company_name(company),
                 "path": "unclear / mixed",
                 "verdict": "NO-GO",
+                "decision_rationale": "No historical evidence to eliminate any failure modes from.",
                 "p_success": 0.0,
                 "n_records": 0,
                 "top_indication": "unknown",
                 "top_mechanism": "unknown",
                 "summary": "No matching historical records found.",
                 "records": [],
+                "eliminated_paths": [],
+                "pursued_paths": [],
+                "active_flags": [],
+                "eliminated_flags": [],
             })
             continue
 
@@ -404,9 +571,22 @@ def main() -> int:
         print(f"\n{analysis['company_clean']}")
         print(f"Path: {analysis['path']}")
         print(f"GO/NO-GO: {analysis['verdict']}  (model P(success)={analysis['p_success']:.1%}, model={analysis['model_verdict']})")
+        print(f"Decision rationale: {analysis['decision_rationale']}")
         print(f"Records matched: {analysis['n_records']}")
         print(f"Top indication: {analysis['top_indication']}")
         print(f"Top mechanism: {analysis['top_mechanism']}")
+        print("Eliminated (ruled-out) risk flags:")
+        for flag in analysis["eliminated_flags"]:
+            print(f"  [OK] {flag['label']}")
+        print("Active risk flags:")
+        for flag in analysis["active_flags"]:
+            print(f"  [!!] {flag['label']} — {flag['detail']}")
+        print("Not-do paths already eliminated by this company:")
+        for p in analysis["eliminated_paths"][-5:]:
+            print(f"  - {p['date']} | {p['stage']} | {p['outcome']} | {p['title']}")
+        print("Paths still being pursued:")
+        for p in analysis["pursued_paths"][-5:]:
+            print(f"  - {p['date']} | {p['stage']} | {p['outcome']} | {p['title']}")
         print("Recent history:")
         for row in records[-5:]:
             print(f"  {render_record_line(row)}")
@@ -414,9 +594,22 @@ def main() -> int:
         report_lines.append(f"Company: {analysis['company_clean']}")
         report_lines.append(f"Path: {analysis['path']}")
         report_lines.append(f"GO/NO-GO: {analysis['verdict']}  (model P(success)={analysis['p_success']:.1%}, model={analysis['model_verdict']})")
+        report_lines.append(f"Decision rationale: {analysis['decision_rationale']}")
         report_lines.append(f"Records matched: {analysis['n_records']}")
         report_lines.append(f"Top indication: {analysis['top_indication']}")
         report_lines.append(f"Top mechanism: {analysis['top_mechanism']}")
+        report_lines.append("Eliminated (ruled-out) risk flags:")
+        for flag in analysis["eliminated_flags"]:
+            report_lines.append(f"  [OK] {flag['label']}")
+        report_lines.append("Active risk flags:")
+        for flag in analysis["active_flags"]:
+            report_lines.append(f"  [!!] {flag['label']} — {flag['detail']}")
+        report_lines.append("Not-do paths already eliminated by this company:")
+        for p in analysis["eliminated_paths"][-5:]:
+            report_lines.append(f"  - {p['date']} | {p['stage']} | {p['outcome']} | {p['title']}")
+        report_lines.append("Paths still being pursued:")
+        for p in analysis["pursued_paths"][-5:]:
+            report_lines.append(f"  - {p['date']} | {p['stage']} | {p['outcome']} | {p['title']}")
         report_lines.append("Recent history:")
         for row in records[-5:]:
             report_lines.append(f"  {render_record_line(row)}")

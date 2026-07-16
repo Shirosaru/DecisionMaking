@@ -35,6 +35,14 @@ _SEARCH_QUERIES: list[tuple[str, str, str]] = [
     ("antibody patents biotech company",       "unknown",     "go"),
     ("patent granted biotechnology therapeutics", "unknown",   "go"),
     ("novel patent pharmaceutical company",    "unknown",     "go"),
+    ("patent allowance biotech company",       "unknown",     "go"),
+    ("patent application published biotech",   "unknown",     "go"),
+    ("USPTO notice of allowance pharmaceutical", "unknown",   "go"),
+    ("intellectual property portfolio biotech", "unknown",    "go"),
+    ("secures patent drug candidate",          "unknown",     "go"),
+    ("patent issued gene therapy company",     "unknown",     "go"),
+    ("patent issued cell therapy company",     "unknown",     "go"),
+    ("patent issued small molecule inhibitor company", "unknown", "go"),
 ]
 
 _STAGE_RE = re.compile(

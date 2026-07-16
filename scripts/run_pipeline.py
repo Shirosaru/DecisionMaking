@@ -199,7 +199,7 @@ def run_company_path() -> None:
     from src.storage.repository import fetch_all
 
     rows = fetch_all(db_path=DB_PATH)
-    companies = load_latest_patent_companies(rows, limit=5)
+    companies = load_latest_patent_companies(rows, limit=15)
     if not companies:
         logger.warning("No latest patent companies found in DB. Run collect first.")
         return
