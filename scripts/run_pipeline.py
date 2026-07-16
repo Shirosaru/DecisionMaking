@@ -8,6 +8,7 @@ Usage:
   python3 run_pipeline.py analyse    # analysis on existing DB
   python3 run_pipeline.py train      # model training on existing DB
   python3 run_pipeline.py rl         # RL training demo on existing DB
+    python3 run_pipeline.py company    # company discovery-path analysis
 """
 from __future__ import annotations
 
@@ -23,7 +24,9 @@ logging.basicConfig(
 logger = logging.getLogger("pipeline")
 
 _ROOT = Path(__file__).resolve().parent.parent
+_SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_SCRIPTS))
 
 DB_PATH = _ROOT / "data" / "bioventure.json"
 
@@ -188,6 +191,38 @@ def run_rl() -> None:
     print(f"\n  Correct decisions: {n_correct}/5")
 
 
+# ── Stage 5: Company discovery-path analysis ────────────────────────────────
+
+def run_company_path() -> None:
+    from run_company_path_analysis import load_latest_patent_companies, summarize_path
+    from src.learning.decision_model import SuccessPredictor
+    from src.storage.repository import fetch_all
+
+    rows = fetch_all(db_path=DB_PATH)
+    companies = load_latest_patent_companies(rows, limit=5)
+    if not companies:
+        logger.warning("No latest patent companies found in DB. Run collect first.")
+        return
+
+    model = SuccessPredictor()
+    model.train(db_path=DB_PATH)
+    analyses = []
+    for company in companies:
+        from run_company_path_analysis import find_company_records
+
+        records = find_company_records(rows, company)
+        if not records:
+            continue
+        analyses.append(summarize_path(company, records, model))
+
+    from run_company_path_analysis import render_html_report
+    report_html = render_html_report(analyses)
+    report_path = _ROOT / "data" / "reports" / "company_path_report.html"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report_html)
+    print(f"Company path report written → {report_path}")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main(mode: str = "full") -> None:
@@ -214,12 +249,16 @@ def main(mode: str = "full") -> None:
         logger.info("═══ STAGE 4: RL Demo ═══")
         run_rl()
 
+    if mode in ("full", "company"):
+        logger.info("═══ STAGE 5: Company Discovery-Path Analysis ═══")
+        run_company_path()
+
     logger.info("Pipeline done.")
 
 
 if __name__ == "__main__":
     mode_arg = sys.argv[1] if len(sys.argv) > 1 else "full"
-    valid = {"full", "collect", "analyse", "trend", "train", "rl"}
+    valid = {"full", "collect", "analyse", "trend", "train", "rl", "company"}
     if mode_arg not in valid:
         print(f"Unknown mode '{mode_arg}'. Valid: {', '.join(sorted(valid))}")
         sys.exit(1)

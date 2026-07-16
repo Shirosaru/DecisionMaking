@@ -28,6 +28,7 @@ from src.storage.repository import fetch_all
 
 DB_PATH = _ROOT / "data" / "bioventure.json"
 REPORT_PATH = _ROOT / "data" / "reports" / "company_path_report.txt"
+HTML_REPORT_PATH = _ROOT / "data" / "reports" / "company_path_report.html"
 
 _STAGE_ORDER = {
     "preclinical": 0,
@@ -268,6 +269,90 @@ def render_record_line(row: dict[str, Any]) -> str:
     return f"- {date} | {source} | {stage} | {decision} | {title}"
 
 
+def render_html_report(results: list[dict[str, Any]]) -> str:
+        cards: list[str] = []
+        for item in results:
+                if item.get("n_records", 0) == 0:
+                        cards.append(f"""
+                        <section class="card empty">
+                            <h2>{item['company_clean']}</h2>
+                            <p>No matching historical records found.</p>
+                        </section>
+                        """)
+                        continue
+
+                rows_html = "".join(
+                        f"<li><span>{render_record_line(row)}</span></li>" for row in item["records"][-5:]
+                )
+                cards.append(f"""
+                <section class="card">
+                    <div class="card-head">
+                        <div>
+                            <h2>{item['company_clean']}</h2>
+                            <p class="path">{item['path']}</p>
+                        </div>
+                        <div class="verdict verdict-{item['verdict'].lower()}">
+                            <div class="pct">{item['p_success']:.1%}</div>
+                            <div>{item['verdict']}</div>
+                        </div>
+                    </div>
+                    <div class="meta">
+                        <span>Records matched: {item['n_records']}</span>
+                        <span>Top indication: {item['top_indication']}</span>
+                        <span>Top mechanism: {item['top_mechanism']}</span>
+                    </div>
+                    <p class="summary">{item['summary']}</p>
+                    <div class="history">
+                        <h3>Recent history</h3>
+                        <ul>{rows_html}</ul>
+                    </div>
+                </section>
+                """)
+
+        return f"""<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+<meta charset=\"utf-8\">
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+<title>BioVenture Company Path Analysis</title>
+<style>
+    :root {{
+        --bg:#08111f; --panel:#102036; --panel-2:#15253d; --line:#24405f;
+        --text:#e5eef9; --muted:#97abc3; --accent:#38bdf8; --go:#22c55e; --nogo:#ef4444;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; font-family:Inter, ui-sans-serif, system-ui, sans-serif; background:radial-gradient(circle at top, #102845 0%, #08111f 55%, #050b14 100%); color:var(--text); }}
+    main {{ max-width:1200px; margin:0 auto; padding:32px 20px 60px; }}
+    h1 {{ margin:0 0 8px; font-size:clamp(28px,4vw,44px); letter-spacing:-0.03em; }}
+    .subtitle {{ margin:0 0 24px; color:var(--muted); max-width:900px; line-height:1.6; }}
+    .grid {{ display:grid; gap:18px; }}
+    .card {{ background:linear-gradient(180deg, rgba(16,32,54,.94), rgba(12,22,36,.97)); border:1px solid var(--line); border-radius:20px; padding:22px; box-shadow:0 24px 64px rgba(0,0,0,.28); }}
+    .card-head {{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; }}
+    h2 {{ margin:0 0 6px; font-size:24px; }}
+    .path {{ margin:0; color:#a6f0ff; font-weight:600; }}
+    .verdict {{ min-width:120px; text-align:center; border-radius:16px; padding:12px 14px; border:1px solid var(--line); background:rgba(255,255,255,.03); }}
+    .verdict .pct {{ font-size:28px; font-weight:800; line-height:1.1; }}
+    .verdict-go {{ box-shadow:inset 0 0 0 1px rgba(34,197,94,.2); }}
+    .verdict-go .pct, .verdict-go {{ color:var(--go); }}
+    .verdict-nogo {{ box-shadow:inset 0 0 0 1px rgba(239,68,68,.2); }}
+    .verdict-nogo .pct, .verdict-nogo {{ color:var(--nogo); }}
+    .meta {{ display:flex; flex-wrap:wrap; gap:10px; margin:16px 0; }}
+    .meta span {{ background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.18); color:#c9efff; padding:7px 10px; border-radius:999px; font-size:13px; }}
+    .summary {{ color:var(--text); line-height:1.6; margin:0 0 14px; }}
+    .history h3 {{ margin:0 0 10px; font-size:15px; color:#d8e7f6; }}
+    .history ul {{ margin:0; padding-left:18px; color:var(--muted); line-height:1.65; }}
+    .empty p {{ color:var(--muted); }}
+</style>
+</head>
+<body><main>
+<h1>BioVenture Company Path Analysis</h1>
+<p class=\"subtitle\">Historical company search over the bioventure store. Each card summarizes the path pursued, the historical evidence, and a simplified GO / NO-GO call.</p>
+<div class=\"grid\">
+{''.join(cards)}
+</div>
+</main></body></html>"""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze company discovery paths from the bioventure history.")
     parser.add_argument("companies", nargs="*", help="Company names to analyze")
@@ -287,6 +372,7 @@ def main() -> int:
         return 1
 
     report_lines: list[str] = []
+    html_results: list[dict[str, Any]] = []
     report_lines.append("BIOVENTURE COMPANY PATH ANALYSIS")
     report_lines.append("=" * 40)
     report_lines.append("")
@@ -301,6 +387,17 @@ def main() -> int:
             print(f"{company}: no matching records found")
             report_lines.append(f"{company}: no matching records found")
             report_lines.append("")
+            html_results.append({
+                "company_clean": canonical_company_name(company),
+                "path": "unclear / mixed",
+                "verdict": "NO-GO",
+                "p_success": 0.0,
+                "n_records": 0,
+                "top_indication": "unknown",
+                "top_mechanism": "unknown",
+                "summary": "No matching historical records found.",
+                "records": [],
+            })
             continue
 
         analysis = summarize_path(company, records, model)
@@ -324,10 +421,13 @@ def main() -> int:
         for row in records[-5:]:
             report_lines.append(f"  {render_record_line(row)}")
         report_lines.append("")
+        html_results.append(analysis)
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text("\n".join(report_lines) + "\n")
+    HTML_REPORT_PATH.write_text(render_html_report(html_results))
     print(f"\nReport written → {args.report}")
+    print(f"HTML report written → {HTML_REPORT_PATH}")
     return 0
 
 
